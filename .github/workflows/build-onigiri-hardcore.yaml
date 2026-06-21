@@ -1,5 +1,8 @@
 name: Build Onigiri Hardcore Pake Installers
 
+on: 
+  workflow_dispatch:
+
 permissions:
   contents: read
 

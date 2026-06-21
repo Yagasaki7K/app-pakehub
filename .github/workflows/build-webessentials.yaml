@@ -1,5 +1,8 @@
 name: Build Web Essentials Pake Installers
 
+on: 
+  workflow_dispatch:
+
 permissions:
   contents: read
 
