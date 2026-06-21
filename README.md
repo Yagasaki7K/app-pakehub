@@ -14,6 +14,8 @@ This project provides a repeatable release pipeline for web applications that ar
 
 Final generated installers are stored in `/projects`. Temporary workflow files are stored in `/artifacts` and are not part of the published application catalog.
 
+![](https://raw.githubusercontent.com/tw93/static/main/pake/YouTube.jpg)
+
 ## Features
 
 - One GitHub Actions workflow per application.
@@ -57,6 +59,8 @@ Pake is used because it is designed for packaging websites as lightweight deskto
 | --- | --- | --- |
 | Windows | `windows-latest` | `.msi` |
 | Linux | `ubuntu-latest` | `.deb` |
+
+![](https://raw.githubusercontent.com/tw93/static/main/pake/ChatGPT.png)
 
 ## Available Applications
 
@@ -296,3 +300,5 @@ This project is licensed under the MIT License. See [`LICENSE`](LICENSE) for det
 - Built with [Pake](https://github.com/tw93/Pake).
 - Frontend powered by modern browser APIs and Node.js build scripts.
 - Automation powered by GitHub Actions.
+
+![](https://raw.githubusercontent.com/tw93/static/main/pake/Excalidraw.png)
