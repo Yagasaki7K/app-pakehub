@@ -13,7 +13,7 @@ Final generated installers are stored in `/projects`. Temporary workflow files a
 ## Features
 
 - One GitHub Actions workflow per application.
-- Windows `.msi`, Linux `.deb`, macOS `.dmg`, and macOS `.app` output validation.
+- Windows `.msi`, and Linux `.deb` output validation.
 - Automatic cleanup and replacement of outdated installers for the application being rebuilt.
 - GitHub Release publication for generated installers.
 - Dependency-free SPA with responsive desktop and mobile design.
@@ -53,7 +53,6 @@ Pake is used because it is designed for packaging websites as lightweight deskto
 | --- | --- | --- |
 | Windows | `windows-latest` | `.msi` |
 | Linux | `ubuntu-latest` | `.deb` |
-| macOS | `macos-latest` | `.dmg` and `.app` |
 
 ## Available Applications
 
@@ -90,6 +89,7 @@ The repository includes workflow and metadata entries for the following applicat
 - Shopee
 - Spotify
 - Twitter / X
+- Web Essentials by Yagasaki7K
 - WhatsApp Web
 - YouTube
 
@@ -113,12 +113,6 @@ End users can download generated installers from the SPA catalog or from GitHub 
 ```bash
 sudo apt install ./application.deb
 ```
-
-### macOS
-
-1. Download the application `.dmg` file.
-2. Open the disk image.
-3. Move the app to Applications if prompted.
 
 ## Local Development
 
@@ -176,13 +170,12 @@ Each workflow:
 
 1. Builds Windows `.msi` output on a Windows runner.
 2. Builds Linux `.deb` output on an Ubuntu runner.
-3. Builds macOS `.dmg` and `.app` output on a macOS runner.
-4. Uploads temporary build outputs through GitHub Actions artifacts.
-5. Downloads those outputs in a publish job.
-6. Copies final outputs into `/projects`.
-7. Validates required installer types.
-8. Commits changed generated installers.
-9. Publishes a GitHub Release.
+3. Uploads temporary build outputs through GitHub Actions artifacts.
+4. Downloads those outputs in a publish job.
+5. Copies final outputs into `/projects`.
+6. Validates required installer types.
+7. Commits changed generated installers.
+8. Publishes a GitHub Release.
 
 ## Workflow Validation
 
@@ -238,7 +231,6 @@ Required workflow structure:
 
 - `build-windows` job for `.msi` output.
 - `build-linux` job for `.deb` output.
-- `build-macos` job for `.dmg` and `.app` output.
 - `publish` job that validates, commits, and releases outputs.
 - No `APP_NAME`, `APP_URL`, `PNPM_HOME`, or `pnpm install -g` usage.
 
