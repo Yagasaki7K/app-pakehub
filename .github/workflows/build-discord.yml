@@ -5,7 +5,7 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
   schedule:
-    # Run on the 1st day of every 2 months at 00:00 UTC
+    # Run at 00:00 on the 1st day of every 2nd month (Jan, Mar, May, ...)
     - cron: '0 0 1 */2 *'
 
 jobs:
@@ -83,43 +83,43 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Download all artifacts (preserves subfolders)
+      # Download each artifact into its own subfolder (no merge-multiple)
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./artifacts
 
-      # ---- DIAGNOSTIC BLOCK ----
-      - name: Debug - List artifacts directory
+      # ----- DIAGNOSTIC STEP: show what was downloaded -----
+      - name: Debug - List downloaded artifacts
         run: |
           echo "=== Full directory tree of ./artifacts ==="
           find ./artifacts -type f || echo "No files found in ./artifacts"
           echo ""
-          echo "=== Detailed listing ==="
+          echo "=== Detailed permissions and sizes ==="
           ls -Rla ./artifacts || echo "Directory does not exist"
-      # ---- END DIAGNOSTIC ----
 
-      # Ensure projects folder exists and copy files
-      - name: Copy files to projects folder
+      # ----- Copy files from each subfolder to projects/ -----
+      - name: Copy installers to projects folder
         run: |
           mkdir -p projects
-          echo "Copying .msi files..."
+
+          echo "Copying MSI files..."
           if [ -d "./artifacts/windows-msi" ]; then
-            cp ./artifacts/windows-msi/*.msi ./projects/ 2>/dev/null || echo "⚠️ No .msi found inside windows-msi"
+            cp -v ./artifacts/windows-msi/*.msi ./projects/ 2>/dev/null || echo "⚠️ No .msi found"
           else
             echo "⚠️ Folder windows-msi does not exist"
           fi
 
-          echo "Copying .dmg files..."
+          echo "Copying DMG files..."
           if [ -d "./artifacts/macos-dmg" ]; then
-            cp ./artifacts/macos-dmg/*.dmg ./projects/ 2>/dev/null || echo "⚠️ No .dmg found inside macos-dmg"
+            cp -v ./artifacts/macos-dmg/*.dmg ./projects/ 2>/dev/null || echo "⚠️ No .dmg found"
           else
             echo "⚠️ Folder macos-dmg does not exist"
           fi
 
-          echo "Copying .deb files..."
+          echo "Copying DEB files..."
           if [ -d "./artifacts/linux-deb" ]; then
-            cp ./artifacts/linux-deb/*.deb ./projects/ 2>/dev/null || echo "⚠️ No .deb found inside linux-deb"
+            cp -v ./artifacts/linux-deb/*.deb ./projects/ 2>/dev/null || echo "⚠️ No .deb found"
           else
             echo "⚠️ Folder linux-deb does not exist"
           fi
@@ -127,22 +127,25 @@ jobs:
           echo "=== Final contents of ./projects ==="
           ls -la ./projects || echo "⚠️ projects folder is empty"
 
-      # Commit and push if there are changes
+      # ----- Commit and push (only if files exist) -----
       - name: Commit and push installers
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # Add the projects folder (even if empty, but we only commit if files exist)
           git add projects/
 
+          # Check if there are any changes staged
           if git diff --staged --quiet; then
             echo "✅ No changes to commit."
           else
             git commit -m "Update installers [skip ci]"
             git push origin HEAD:main
+            echo "✅ Installers committed and pushed."
           fi
 
-      # Create GitHub Release (using files from projects/)
+      # ----- Create GitHub Release with the installers -----
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
