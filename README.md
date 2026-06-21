@@ -58,42 +58,79 @@ Pake is used because it is designed for packaging websites as lightweight deskto
 
 The repository includes workflow and metadata entries for the following applications:
 
-- 4chan
-- 9GAG
-- Ademicon
-- Amazon
-- AnimeFire
-- ChatGPT
-- Codex
-- Crunchyroll
-- DeepSeek
-- DevScout
-- Discord
-- Disney+
-- Facebook
-- Gemini
-- GeoGuessr
-- GitHub
-- HBO Max
-- iLovePDF
-- Instagram
-- Krea AI
-- Manga Livre
-- Manga Livre Blog
-- Mercado Livre
-- Netflix
-- Onigiri Hardcore
-- Photomosh
-- Radio Garden
-- Rocketseat
-- Shopee
-- Spotify
-- Twitter / X
-- Web Essentials by Yagasaki7K
-- WhatsApp Web
-- YouTube
+## Windows (.msi)
+- [4chan (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/4chan.msi)
+- [9GAG (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/9gag.msi)
+- [Ademicon (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ademicon.msi)
+- [Amazon (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/amazon.msi)
+- [AnimeFire (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/animefire.msi)
+- [ChatGPT (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/chatgpt.msi)
+- [Codex (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/codex.msi)
+- [DevScout (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/devscout.msi)
+- [Discord (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/discord.msi)
+- [Crunchyroll (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/crunchyroll.msi)
+- [DeepSeek (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/deepseek.msi)
+- [Disney+ (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/disney+.msi)
+- [Facebook (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/facebook.msi)
+- [Gemini (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gemini.msi)
+- [GeoGuessr (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/geoguessr.msi)
+- [GitHub (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/github.msi)
+- [HBO Max (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/hbo-max.msi)
+- [iLovePDF (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ilovepdf.msi)
+- [Instagram (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/instagram.msi)
+- [Krea AI (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/krea-ai.msi)
+- [Manga Livre (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/manga-livre.msi)
+- [Manga Livre Blog (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/manga-livre-blog.msi)
+- [Mercado Livre (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/mercado-livre.msi)
+- [Netflix (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/netflix.msi)
+- [Onigiri Hardcore (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/onigiri-hardcore.msi)
+- [Rocketseat (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/rocketseat.msi)
+- [Photomosh (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/photomosh.msi)
+- [Radio Garden (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/radio-garden.msi)
+- [Shopee (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/shopee.msi)
+- [Spotify (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/spotify.msi)
+- [Twitter / X (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/twitter-x.msi)
+- [Web Essentials by Yagasaki7K (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/web-essentials.msi)
+- [WhatsApp Web (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/whatsapp-web.msi)
+- [YouTube (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/youtube.msi)
 
-The web catalog only displays applications that have generated installer files in `/projects`.
+## Linux (.deb)
+- [4chan (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/4chan.deb)
+- [9GAG (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/9gag.deb)
+- [Ademicon (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ademicon.deb)
+- [Amazon (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/amazon.deb)
+- [AnimeFire (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/animefire.deb)
+- [ChatGPT (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/chatgpt.deb)
+- [Codex (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/codex.deb)
+- [Crunchyroll (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/crunchyroll.deb)
+- [DeepSeek (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/deepseek.deb)
+- [DevScout (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/devscout.deb)
+- [Discord (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/discord.deb)
+- [Disney+ (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/disney+.deb)
+- [Facebook (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/facebook.deb)
+- [Gemini (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gemini.deb)
+- [GeoGuessr (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/geoguessr.deb)
+- [GitHub (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/github.deb)
+- [HBO Max (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/hbo-max.deb)
+- [iLovePDF (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ilovepdf.deb)
+- [Instagram (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/instagram.deb)
+- [Krea AI (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/krea-ai.deb)
+- [Manga Livre (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/manga-livre.deb)
+- [Manga Livre Blog (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/manga-livre-blog.deb)
+- [Mercado Livre (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/mercado-livre.deb)
+- [Netflix (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/netflix.deb)
+- [Onigiri Hardcore (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/onigiri-hardcore.deb)
+- [Photomosh (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/photomosh.deb)
+- [Radio Garden (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/radio-garden.deb)
+- [Rocketseat (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/rocketseat.deb)
+- [Shopee (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/shopee.deb)
+- [Spotify (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/spotify.deb)
+- [Twitter / X (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/twitter-x.deb)
+- [Web Essentials by Yagasaki7K (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/web-essentials.deb)
+- [WhatsApp Web (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/whatsapp-web.deb)
+- [YouTube (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/youtube.deb)
+
+The web catalog only displays applications that have generated installer files in `/projects` or you can see better [in projects.md](./projects.md).
 
 ## Installation
 
