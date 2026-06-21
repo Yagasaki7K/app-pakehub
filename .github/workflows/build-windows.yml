@@ -1,19 +1,70 @@
-name: Build Windows MSI
+name: Build Pake installers for all platforms
+
 on:
   push:
-  workflow_dispatch:
+    branches: [ main, master ]
+  workflow_dispatch:  # permite execução manual
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install -g pake-cli
-      - run: pake https://discord.com --targets msi
-      - uses: actions/upload-artifact@v4
+      - name: Install pake-cli
+        run: npm install -g pake-cli
+      - name: Build MSI
+        run: pake https://discord.com --targets msi
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: discord-msi
+          name: windows-msi
           path: ./*.msi
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install pake-cli
+        run: npm install -g pake-cli
+      - name: Build DMG (macOS)
+        run: pake https://discord.com --targets dmg
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: ./*.dmg
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install system dependencies (for Tauri)
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            build-essential \
+            libssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libpango1.0-dev \
+            libcairo2-dev
+      - name: Install pake-cli
+        run: npm install -g pake-cli
+      - name: Build DEB
+        run: pake https://discord.com --targets deb
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: ./*.deb
