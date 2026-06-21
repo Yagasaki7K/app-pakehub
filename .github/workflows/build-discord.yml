@@ -41,6 +41,12 @@ jobs:
         shell: bash
         run: mkdir -p "$ARTIFACTS_DIR/windows"
 
+      - name: Configure pnpm global bin directory
+        shell: bash
+        run: |
+          echo "PNPM_HOME=$RUNNER_TEMP/pnpm" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+
       - name: Install pnpm
         shell: bash
         run: npm install -g pnpm
@@ -94,6 +100,11 @@ jobs:
             libpango1.0-dev \
             libcairo2-dev
 
+      - name: Configure pnpm global bin directory
+        run: |
+          echo "PNPM_HOME=$RUNNER_TEMP/pnpm" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
+
       - name: Install pnpm
         run: npm install -g pnpm
 
@@ -128,6 +139,11 @@ jobs:
 
       - name: Prepare artifact directory
         run: mkdir -p "$ARTIFACTS_DIR/macos"
+
+      - name: Configure pnpm global bin directory
+        run: |
+          echo "PNPM_HOME=$RUNNER_TEMP/pnpm" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/pnpm" >> "$GITHUB_PATH"
 
       - name: Install pnpm
         run: npm install -g pnpm
