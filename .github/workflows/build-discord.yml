@@ -214,8 +214,8 @@ jobs:
       - name: Commit generated installers
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "Anderson Marlon"
+          git config user.email "anderson18.marlon@gmail.com"
           git add "$PROJECTS_DIR/"
 
           if git diff --staged --quiet; then

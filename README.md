@@ -8,6 +8,20 @@ Pake is an open-source command line tool that wraps web applications as lightwei
 
 Pake project: <https://github.com/tw93/Pake>
 
+## Environment Configuration
+
+The repository includes a committed `.env` file with non-secret defaults used by the application and release workflow documentation.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NODE_VERSION` | `24` | Node.js version used by GitHub Actions and local Pake builds. |
+| `APP_URL` | `https://discord.com` | Web application URL that Pake wraps into native desktop packages. |
+| `PROJECTS_DIR` | `projects` | Repository-root directory that stores only final generated installers and application bundles. |
+| `ARTIFACTS_DIR` | `artifacts` | Repository-root directory for temporary build output, diagnostics, and GitHub Actions artifact transfer. |
+| `GITHUB_TOKEN` | empty | Secret token used by GitHub release automation. The repository value is intentionally blank. |
+
+Do not commit a real `GITHUB_TOKEN`. In GitHub Actions, the release job uses `${{ secrets.GITHUB_TOKEN }}` from the runner environment. For local testing, export a token in your shell only when a command explicitly requires GitHub API access.
+
 ## Generated Outputs
 
 The workflow requires these final outputs in `projects` after a successful run:
@@ -83,9 +97,9 @@ The final job runs `scripts/ci/validate-projects.sh projects` before committing 
 
 If any check fails, the workflow stops before commit and release.
 
-## Release Process
+## Release Workflow
 
-After validation passes, the workflow commits the refreshed `projects` directory back to the source branch when generated outputs changed. It then creates a GitHub Release named from the workflow run number.
+After validation passes, the workflow configures automated commit authorship as Anderson Marlon, commits the refreshed `projects` directory back to the source branch when generated outputs changed, and creates a GitHub Release named from the workflow run number.
 
 Release uploads are read directly from `projects`:
 
@@ -126,6 +140,16 @@ The generated `.app` bundle is also preserved in the committed `projects` direct
 
 Contributions are welcome. Keep workflow changes focused, validate path handling, and avoid assuming where Pake writes generated output.
 
+Recommended contribution workflow:
+
+1. Fork the repository.
+2. Create a feature branch.
+3. Make focused changes.
+4. Run the validation scripts or relevant GitHub Actions workflow before opening a pull request.
+5. Open a pull request that explains the root cause, implementation, and validation results.
+
+When modifying automation, verify every path used by Pake, `upload-artifact`, `download-artifact`, copy operations, release uploads, and generated installer commits.
+
 ## License
 
-This project is distributed under the MIT License. If a dedicated license file is added later, that file should be treated as the authoritative license text.
+This project is licensed under the MIT License. See the `LICENSE` file for the complete license text and copyright notice.
