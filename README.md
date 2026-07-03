@@ -70,6 +70,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [4chan (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/4chan.msi)
 - [9GAG (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/9gag.msi)
 - [Ademicon (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ademicon.msi)
+- [Anilist (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/anilist.msi)
 - [Amazon (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/amazon.msi)
 - [AnimeFire (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/animefire.msi)
 - [ChatGPT (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/chatgpt.msi)
@@ -83,6 +84,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [Gemini (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gemini.msi)
 - [GeoGuessr (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/geoguessr.msi)
 - [GitHub (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/github.msi)
+- [Gmail (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gmail.msi)
 - [HBO Max (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/hbo-max.msi)
 - [iLovePDF (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ilovepdf.msi)
 - [Instagram (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/instagram.msi)
@@ -93,6 +95,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [Netflix (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/netflix.msi)
 - [Onigiri Hardcore (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/onigiri-hardcore.msi)
 - [Photomosh (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/photomosh.msi)
+- [Proton Mail (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/protonmail.msi)
 - [Radio Garden (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/radio-garden.msi)
 - [Reddit (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/reddit.msi)
 - [Rocketseat (Windows)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/rocketseat.msi)
@@ -106,7 +109,7 @@ The repository includes workflow and metadata entries for the following applicat
 ## Linux (.deb)
 - [4chan (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/4chan.deb)
 - [9GAG (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/9gag.deb)
-- [Ademicon (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ademicon.deb)
+- [Anilist (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/anilist.deb)
 - [Amazon (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/amazon.deb)
 - [AnimeFire (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/animefire.deb)
 - [ChatGPT (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/chatgpt.deb)
@@ -120,6 +123,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [Gemini (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gemini.deb)
 - [GeoGuessr (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/geoguessr.deb)
 - [GitHub (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/github.deb)
+- [Gmail (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/gmail.deb)
 - [HBO Max (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/hbo-max.deb)
 - [iLovePDF (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/ilovepdf.deb)
 - [Instagram (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/instagram.deb)
@@ -130,6 +134,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [Netflix (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/netflix.deb)
 - [Onigiri Hardcore (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/onigiri-hardcore.deb)
 - [Photomosh (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/photomosh.deb)
+- [Proton Mail (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/protonmail.deb)
 - [Radio Garden (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/radio-garden.deb)
 - [Reddit (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/reddit.deb)
 - [Rocketseat (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/rocketseat.deb)
@@ -139,6 +144,7 @@ The repository includes workflow and metadata entries for the following applicat
 - [Web Essentials by Yagasaki7K (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/web-essentials.deb)
 - [WhatsApp Web (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/whatsapp-web.deb)
 - [YouTube (Deb Linux)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/youtube.deb)
+
 
 The web catalog only displays applications that have generated installer files in `/projects` or you can see better [in projects.md](./projects.md).
 
