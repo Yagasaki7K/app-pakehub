@@ -113,6 +113,8 @@ jobs:
     name: Smoke test
     needs: validate
     if: needs.validate.outputs.smoke != 'null'
+    permissions:
+      contents: write
     uses: ./.github/workflows/build-app.yaml
     with:
       name: __smoke__
@@ -128,7 +130,7 @@ jobs:
     name: Build ${{ matrix.app.name }}
     needs: [validate, smoke-test]
     permissions:
-      contents: read
+      contents: write
     strategy:
       matrix:
         app: ${{ fromJson(needs.validate.outputs.apps) }}
