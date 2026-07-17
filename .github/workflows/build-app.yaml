@@ -40,7 +40,6 @@ jobs:
         id: slug
         shell: bash
         run: |
-          # Add short hash to avoid duplicates
           HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
           SLUG=$(printf '%s' "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
@@ -64,7 +63,7 @@ jobs:
 
       - name: Install Pake CLI
         shell: bash
-        run: npm install -g pake-cli
+        run: npm install -g pake-cli@latest
 
       - name: Verify Pake
         shell: bash
@@ -143,7 +142,7 @@ jobs:
             libcairo2-dev
 
       - name: Install Pake CLI
-        run: npm install -g pake-cli
+        run: npm install -g pake-cli@latest
 
       - name: Verify Pake
         run: pake --version
@@ -208,7 +207,7 @@ jobs:
         run: mkdir -p artifacts/macos
 
       - name: Install Pake CLI
-        run: npm install -g pake-cli
+        run: npm install -g pake-cli@latest
 
       - name: Verify Pake
         run: pake --version

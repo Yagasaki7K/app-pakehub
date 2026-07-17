@@ -8,22 +8,24 @@ on:
 
 permissions:
   contents: write
-  actions: write
+  actions: read
 
 concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  orchestrate:
-    name: Orchestrate builds
+  validate:
+    name: Validate apps.json
     runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate apps.json (new format with .apps)
-        id: read
+      - name: Validate and build matrix
+        id: matrix
         shell: bash
         run: |
           if [ ! -f apps.json ]; then
@@ -39,97 +41,38 @@ jobs:
             exit 1
           fi
 
-      - name: Trigger builds and store run IDs
-        id: trigger
-        shell: bash
-        run: |
-          RUN_IDS=""
-          while IFS= read -r app; do
-            name=$(echo "$app" | jq -r '.name')
-            url=$(echo "$app" | jq -r '.url')
-            echo "🚀 Triggering build for: $name"
-            gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
-            # Aguarda o run ser criado
-            sleep 2
-            # Obtém o ID do run mais recente para este workflow e branch
-            ID=$(gh run list --workflow build-app.yaml --branch "${{ github.ref_name }}" --limit 1 --json databaseId --jq '.[0].databaseId')
-            if [ -n "$ID" ]; then
-              RUN_IDS="$RUN_IDS $ID"
-              echo "✅ Run started with ID: $ID"
-            else
-              echo "⚠️ Could not retrieve run ID for $name"
-            fi
-          done < <(jq -c '.apps[]' apps.json)
-          echo "run_ids=$RUN_IDS" >> "$GITHUB_OUTPUT"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Build matrix JSON
+          MATRIX=$(jq -c '{ include: .apps }' apps.json)
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "✅ Matrix generated successfully"
 
-      - name: Monitor builds and cancel on failure
-        shell: bash
-        run: |
-          set -euo pipefail
-          RUN_IDS="${{ steps.trigger.outputs.run_ids }}"
-          if [ -z "$RUN_IDS" ]; then
-            echo "No runs triggered, exiting"
-            exit 0
-          fi
-          echo "⏳ Monitoring runs: $RUN_IDS"
-          TOTAL=$(echo "$RUN_IDS" | wc -w)
-          COMPLETED=0
+  build:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.validate.outputs.matrix) }}
+      fail-fast: true  # Cancela todos os jobs se um falhar
+    steps:
+      - name: Call reusable build workflow
+        uses: ./.github/workflows/build-app.yaml
+        with:
+          name: ${{ matrix.name }}
+          url: ${{ matrix.url }}
 
-          for i in {1..180}; do
-            FAILED=false
-            for id in $RUN_IDS; do
-              # Get run status and conclusion
-              STATUS=$(gh run view "$id" --json status --jq '.status')
-              CONCLUSION=$(gh run view "$id" --json conclusion --jq '.conclusion' 2>/dev/null || echo "")
-              if [ "$STATUS" == "completed" ]; then
-                ((COMPLETED++)) || true
-                if [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "skipped" ]; then
-                  echo "❌ Run $id failed with conclusion: $CONCLUSION"
-                  FAILED=true
-                  break
-                fi
-              fi
-            done
+  collect:
+    name: Collect artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    if: always() && !cancelled()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            if [ "$FAILED" = true ]; then
-              echo "❌ A build failed. Cancelling ALL remaining runs..."
-              for id in $RUN_IDS; do
-                gh run cancel "$id" 2>/dev/null || true
-              done
-              exit 1
-            fi
-
-            if [ "$COMPLETED" -eq "$TOTAL" ]; then
-              echo "✅ All builds finished successfully."
-              break
-            fi
-
-            echo "🔄 Still waiting... ($COMPLETED/$TOTAL completed)"
-            sleep 10
-          done
-
-          # Timeout check
-          if [ "$COMPLETED" -lt "$TOTAL" ]; then
-            echo "❌ Timeout: Not all builds completed ($COMPLETED/$TOTAL)"
-            for id in $RUN_IDS; do
-              gh run cancel "$id" 2>/dev/null || true
-            done
-            exit 1
-          fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download artifacts from current runs only
-        shell: bash
-        run: |
-          mkdir -p artifacts
-          for id in ${{ steps.trigger.outputs.run_ids }}; do
-            gh run download "$id" -D artifacts/
-          done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
       - name: Normalize and copy to projects/
         shell: bash
@@ -137,6 +80,8 @@ jobs:
           set -euo pipefail
           mkdir -p projects
           rm -rf projects/* 2>/dev/null || true
+
+          # Process .msi, .deb, .dmg files
           find artifacts -type f \( -iname "*.msi" -o -iname "*.deb" -o -iname "*.dmg" \) | while read -r file; do
             filename=$(basename "$file")
             echo "📦 Copying $filename to projects/"
@@ -155,10 +100,11 @@ jobs:
             for file in projects/*.$ext; do
               if [ -f "$file" ]; then
                 slug=$(basename "$file" .$ext)
-                # Look up name from apps.json
-                name=$(jq -r ".apps[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$slug\") | .name" apps.json 2>/dev/null || echo "")
+                # Extract the base slug without hash suffix
+                base_slug=$(echo "$slug" | sed 's/-[a-f0-9]\{4\}$//')
+                name=$(jq -r ".apps[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$base_slug\") | .name" apps.json 2>/dev/null || echo "")
                 if [ -z "$name" ] || [ "$name" = "null" ]; then
-                  name=$(echo "$slug" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
+                  name=$(echo "$base_slug" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
                 fi
                 REPO="${{ github.repository }}"
                 echo "- [$name ($os_name)](https://github.com/$REPO/raw/refs/heads/main/projects/$slug.$ext)"
@@ -197,8 +143,8 @@ jobs:
       - name: Commit changes
         if: steps.changes.outputs.changed == 'true'
         run: |
-          git config.user.name "Anderson Marlon"
-          git config.user.email "anderson18.marlon@gmail.com"
+          git config user.name "Anderson Marlon"
+          git config user.email "anderson18.marlon@gmail.com"
           git add projects/ README.md projects.md
           git commit -m "Update builds and app list via orchestrator [skip ci]"
           git push
