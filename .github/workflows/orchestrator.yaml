@@ -20,10 +20,6 @@ concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PAKE_VERSION: 3.14.0
-  APPS_PER_BATCH: 20
-
 jobs:
   validate:
     name: Validate apps.json
@@ -74,7 +70,11 @@ jobs:
           # Generate slugs internally (not stored in apps.json)
           def slugify(name):
               # Normalize Unicode, then slugify
-              name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+              try:
+                  import unicodedata
+                  name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+              except:
+                  pass
               return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', name.lower())).strip('-') or 'app'
 
           slugs = []
@@ -85,7 +85,7 @@ jobs:
                   sys.exit(1)
               slugs.append(slug)
 
-          apps_per_batch = int(os.environ.get('APPS_PER_BATCH', 20))
+          apps_per_batch = 20
           total_apps = len(apps)
           num_batches = math.ceil(total_apps / apps_per_batch)
 
@@ -125,7 +125,7 @@ jobs:
     with:
       apps: ${{ toJson(matrix.batch.apps) }}
       batch_id: ${{ matrix.batch.batch_id }}
-      pake-version: ${{ env.PAKE_VERSION }}
+      pake-version: 3.14.0  # Fixed version directly
 
   collect:
     name: Collect artifacts
@@ -191,7 +191,7 @@ jobs:
                       ;;
                     macos)
                       # Robust DMG validation: attach + detach
-                      if ! hdiutil attach -readonly -nobrowse "$FILE" 2>/dev/null; then
+                      if ! hdiutil attach -readonly -nobrowse "$FILE" >/dev/null 2>&1; then
                         echo "❌ Invalid DMG format for $slug on $platform"
                         MISSING=$((MISSING + 1))
                       else

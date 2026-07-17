@@ -73,11 +73,9 @@ jobs:
           URL="${{ matrix.app.url }}"
           PAKE_VERSION="${{ inputs.pake-version }}"
 
-          # Use a temporary directory to avoid stale artifacts
           BUILD_DIR=$(mktemp -d)
           cd "$BUILD_DIR"
 
-          # Retry function for npm operations
           retry() {
             local n=0
             local max=3
@@ -95,11 +93,9 @@ jobs:
             return 1
           }
 
-          # Install and build with retry
           retry npx --yes pake-cli@$PAKE_VERSION --version >/dev/null 2>&1
           retry npx --yes pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
 
-          # Find artifact
           ARTIFACT=$(find . -name "*.${{ matrix.platform.ext }}" | head -1)
           if [ -z "$ARTIFACT" ]; then
             echo "❌ No .${{ matrix.platform.ext }} file generated"
@@ -112,7 +108,6 @@ jobs:
             exit 1
           fi
 
-          # Validate format
           case "${{ matrix.platform.name }}" in
             windows)
               if ! file "$ARTIFACT" | grep -qi "MSI\|Composite Document"; then
@@ -127,18 +122,15 @@ jobs:
               fi
               ;;
             macos)
-              # Robust DMG validation: attach + detach
               if ! hdiutil attach -readonly -nobrowse "$ARTIFACT" >/dev/null 2>&1; then
                 echo "❌ Invalid DMG format"
                 exit 1
               else
-                # Detach the mounted volume
                 hdiutil detach "$(hdiutil info | grep "$ARTIFACT" | head -1 | awk '{print $1}')" >/dev/null 2>&1 || true
               fi
               ;;
           esac
 
-          # Create artifacts directory with unique name
           mkdir -p "$GITHUB_WORKSPACE/artifacts/${SLUG}-${{ matrix.platform.name }}"
           cp "$ARTIFACT" "$GITHUB_WORKSPACE/artifacts/${SLUG}-${{ matrix.platform.name }}/${SLUG}.${{ matrix.platform.ext }}"
           echo "✅ Collected $SLUG for ${{ matrix.platform.name }} ($SIZE bytes)"
