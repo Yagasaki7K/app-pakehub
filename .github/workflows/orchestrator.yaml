@@ -6,10 +6,6 @@ on:
       - apps.json
   workflow_dispatch:
 
-permissions:
-  contents: write
-  actions: read
-
 concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
@@ -18,6 +14,8 @@ jobs:
   validate:
     name: Validate apps.json
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
     steps:
@@ -41,7 +39,6 @@ jobs:
             exit 1
           fi
 
-          # Build matrix JSON
           MATRIX=$(jq -c '{ include: .apps }' apps.json)
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
           echo "✅ Matrix generated successfully"
@@ -49,22 +46,23 @@ jobs:
   build:
     name: Build ${{ matrix.name }}
     needs: validate
-    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix: ${{ fromJson(needs.validate.outputs.matrix) }}
-      fail-fast: true  # Cancela todos os jobs se um falhar
-    steps:
-      - name: Call reusable build workflow
-        uses: ./.github/workflows/build-app.yaml
-        with:
-          name: ${{ matrix.name }}
-          url: ${{ matrix.url }}
+      fail-fast: true
+    uses: ./.github/workflows/build-app.yaml
+    with:
+      name: ${{ matrix.name }}
+      url: ${{ matrix.url }}
 
   collect:
     name: Collect artifacts
     needs: build
     runs-on: ubuntu-latest
-    if: always() && !cancelled()
+    permissions:
+      contents: write
+    if: always()
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -80,8 +78,6 @@ jobs:
           set -euo pipefail
           mkdir -p projects
           rm -rf projects/* 2>/dev/null || true
-
-          # Process .msi, .deb, .dmg files
           find artifacts -type f \( -iname "*.msi" -o -iname "*.deb" -o -iname "*.dmg" \) | while read -r file; do
             filename=$(basename "$file")
             echo "📦 Copying $filename to projects/"
@@ -100,7 +96,6 @@ jobs:
             for file in projects/*.$ext; do
               if [ -f "$file" ]; then
                 slug=$(basename "$file" .$ext)
-                # Extract the base slug without hash suffix
                 base_slug=$(echo "$slug" | sed 's/-[a-f0-9]\{4\}$//')
                 name=$(jq -r ".apps[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$base_slug\") | .name" apps.json 2>/dev/null || echo "")
                 if [ -z "$name" ] || [ "$name" = "null" ]; then

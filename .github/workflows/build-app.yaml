@@ -61,9 +61,9 @@ jobs:
         shell: bash
         run: mkdir -p artifacts/windows
 
-      - name: Install Pake CLI
+      - name: Install Pake CLI (pinned version)
         shell: bash
-        run: npm install -g pake-cli@latest
+        run: npm install -g pake-cli@3.0.2
 
       - name: Verify Pake
         shell: bash
@@ -82,9 +82,17 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/windows"
 
-          MSI_FILE=$(find . -name "*.msi" -type f | head -1)
-          if [ -z "$MSI_FILE" ]; then
+          # Find .msi file(s) – ensure we pick the right one
+          MSI_FILES=$(find . -name "*.msi" -type f)
+          if [ -z "$MSI_FILES" ]; then
             echo "❌ No .msi file found"
+            exit 1
+          fi
+
+          # If multiple, pick the one with the shortest path (likely root)
+          MSI_FILE=$(echo "$MSI_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
+          if [ -z "$MSI_FILE" ]; then
+            echo "❌ Could not determine correct .msi file"
             exit 1
           fi
 
@@ -141,8 +149,8 @@ jobs:
             libpango1.0-dev \
             libcairo2-dev
 
-      - name: Install Pake CLI
-        run: npm install -g pake-cli@latest
+      - name: Install Pake CLI (pinned version)
+        run: npm install -g pake-cli@3.0.2
 
       - name: Verify Pake
         run: pake --version
@@ -160,9 +168,16 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/linux"
 
-          DEB_FILE=$(find . -name "*.deb" -type f | head -1)
-          if [ -z "$DEB_FILE" ]; then
+          DEB_FILES=$(find . -name "*.deb" -type f)
+          if [ -z "$DEB_FILES" ]; then
             echo "❌ No .deb file found"
+            exit 1
+          fi
+
+          # Pick the shortest path (likely root)
+          DEB_FILE=$(echo "$DEB_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
+          if [ -z "$DEB_FILE" ]; then
+            echo "❌ Could not determine correct .deb file"
             exit 1
           fi
 
@@ -206,8 +221,8 @@ jobs:
       - name: Prepare artifact directory
         run: mkdir -p artifacts/macos
 
-      - name: Install Pake CLI
-        run: npm install -g pake-cli@latest
+      - name: Install Pake CLI (pinned version)
+        run: npm install -g pake-cli@3.0.2
 
       - name: Verify Pake
         run: pake --version
@@ -224,9 +239,16 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/macos"
 
-          DMG_FILE=$(find . -name "*.dmg" -type f | head -1)
-          if [ -z "$DMG_FILE" ]; then
+          DMG_FILES=$(find . -name "*.dmg" -type f)
+          if [ -z "$DMG_FILES" ]; then
             echo "❌ No .dmg file found"
+            exit 1
+          fi
+
+          # Pick the shortest path (likely root)
+          DMG_FILE=$(echo "$DMG_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
+          if [ -z "$DMG_FILE" ]; then
+            echo "❌ Could not determine correct .dmg file"
             exit 1
           fi
 
