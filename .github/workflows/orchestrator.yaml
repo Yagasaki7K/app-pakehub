@@ -43,7 +43,7 @@ jobs:
             name=$(echo "$app" | jq -r '.name')
             url=$(echo "$app" | jq -r '.url')
             echo "🚀 Triggering build for: $name"
-            gh workflow run build-app.yml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
+            gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
           done < <(jq -c '.[]' apps.json)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -54,7 +54,7 @@ jobs:
           echo "⏳ Waiting for all triggered workflows to complete..."
           # Aguarda até 10 minutos (600 segundos)
           for i in {1..60}; do
-            pending=$(gh run list --workflow build-app.yml --status in_progress --json status | jq 'length')
+            pending=$(gh run list --workflow build-app.yaml --status in_progress --json status | jq 'length')
             if [ "$pending" -eq 0 ]; then
               echo "✅ All builds finished."
               break
@@ -69,8 +69,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          # Baixa artefatos de todos os runs bem-sucedidos do workflow build-app.yml
-          for run in $(gh run list --workflow build-app.yml --status completed --json databaseId --jq '.[].databaseId'); do
+          # Baixa artefatos de todos os runs bem-sucedidos do workflow build-app.yaml
+          for run in $(gh run list --workflow build-app.yaml --status completed --json databaseId --jq '.[].databaseId'); do
             gh run download "$run" -D artifacts/
           done
         env:
