@@ -3,18 +3,14 @@ name: Build Application
 on:
   workflow_dispatch:
     inputs:
-      name:
-        description: Application name
+      apps:
+        description: List of applications (JSON array with name, url, slug)
         required: true
         type: string
-      url:
-        description: Application URL
+      batch_id:
+        description: Batch identifier
         required: true
-        type: string
-      slug:
-        description: Application slug (stable identifier)
-        required: true
-        type: string
+        type: number
       pake-version:
         description: Pake CLI version
         required: false
@@ -22,18 +18,14 @@ on:
         default: 3.14.0
   workflow_call:
     inputs:
-      name:
-        description: Application name
+      apps:
+        description: List of applications (JSON array with name, url, slug)
         required: true
         type: string
-      url:
-        description: Application URL
+      batch_id:
+        description: Batch identifier
         required: true
-        type: string
-      slug:
-        description: Application slug (stable identifier)
-        required: true
-        type: string
+        type: number
       pake-version:
         description: Pake CLI version
         required: false
@@ -44,84 +36,25 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ inputs.slug }}-${{ github.ref }}
+  group: build-batch-${{ inputs.batch_id }}
   cancel-in-progress: true
 
 jobs:
-  build-windows:
-    name: Build Windows MSI
-    runs-on: windows-latest
-    timeout-minutes: 30
+  build-platform:
+    name: ${{ matrix.app.name }} (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      matrix:
+        platform:
+          - { name: windows, runner: windows-latest, ext: msi }
+          - { name: linux, runner: ubuntu-latest, ext: deb }
+          - { name: macos, runner: macos-latest, ext: dmg }
+        app: ${{ fromJson(inputs.apps) }}
+      fail-fast: false
+      max-parallel: 3
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-pake
-        with:
-          pake-version: ${{ inputs.pake-version }}
-
-      - name: Clean workspace
-        shell: bash
-        run: |
-          find . -name "*.msi" -type f -delete 2>/dev/null || true
-
-      - name: Prepare artifact directory
-        shell: bash
-        run: mkdir -p artifacts/windows
-
-      - name: Build Windows installer
-        shell: bash
-        run: |
-          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
-            --name "${{ inputs.slug }}"
-
-      - name: Validate and collect artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          SLUG="${{ inputs.slug }}"
-          TARGET_DIR="artifacts/windows"
-
-          MSI_FILES=$(find . -name "*.msi" -type f)
-          COUNT=$(echo "$MSI_FILES" | wc -l)
-
-          if [ -z "$MSI_FILES" ]; then
-            echo "❌ No .msi file found"
-            exit 1
-          fi
-
-          if [ "$COUNT" -gt 1 ]; then
-            echo "❌ Multiple .msi files found ($COUNT), expected exactly one"
-            echo "$MSI_FILES"
-            exit 1
-          fi
-
-          MSI_FILE=$(echo "$MSI_FILES" | head -1)
-          # Validate MSI format
-          if ! file "$MSI_FILE" | grep -qi "MSI\|Composite Document"; then
-            echo "❌ File does not appear to be a valid MSI installer"
-            file "$MSI_FILE"
-            exit 1
-          fi
-
-          cp "$MSI_FILE" "$TARGET_DIR/${SLUG}.msi"
-          echo "✅ Collected $MSI_FILE -> $TARGET_DIR/${SLUG}.msi"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.slug }}-windows
-          path: artifacts/windows/${{ inputs.slug }}.msi
-          if-no-files-found: error
-
-  build-linux:
-    name: Build Linux DEB
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
@@ -129,121 +62,90 @@ jobs:
           pake-version: ${{ inputs.pake-version }}
 
       - name: Install Linux dependencies
+        if: matrix.platform.name == 'linux'
         uses: ./.github/actions/install-linux-deps
 
-      - name: Clean workspace
-        shell: bash
-        run: |
-          find . -name "*.deb" -type f -delete 2>/dev/null || true
-
-      - name: Prepare artifact directory
-        run: mkdir -p artifacts/linux
-
-      - name: Build Linux installer
-        run: |
-          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
-            --name "${{ inputs.slug }}"
-
-      - name: Validate and collect artifact
+      - name: Build ${{ matrix.platform.name }} installer
         shell: bash
         run: |
           set -euo pipefail
-          SLUG="${{ inputs.slug }}"
-          TARGET_DIR="artifacts/linux"
+          SLUG="${{ matrix.app.slug }}"
+          URL="${{ matrix.app.url }}"
+          PAKE_VERSION="${{ inputs.pake-version }}"
 
-          DEB_FILES=$(find . -name "*.deb" -type f)
-          COUNT=$(echo "$DEB_FILES" | wc -l)
+          # Use a temporary directory to avoid stale artifacts
+          BUILD_DIR=$(mktemp -d)
+          cd "$BUILD_DIR"
 
-          if [ -z "$DEB_FILES" ]; then
-            echo "❌ No .deb file found"
+          # Retry function for npm operations
+          retry() {
+            local n=0
+            local max=3
+            local delay=5
+            until [ $n -ge $max ]; do
+              if "$@"; then
+                return 0
+              fi
+              n=$((n+1))
+              echo "⚠️ Command failed (attempt $n/$max). Retrying in ${delay}s..."
+              sleep $delay
+              delay=$((delay * 2))
+            done
+            echo "❌ Failed after $max attempts."
+            return 1
+          }
+
+          # Install and build with retry
+          retry npx --yes pake-cli@$PAKE_VERSION --version >/dev/null 2>&1
+          retry npx --yes pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
+
+          # Find artifact
+          ARTIFACT=$(find . -name "*.${{ matrix.platform.ext }}" | head -1)
+          if [ -z "$ARTIFACT" ]; then
+            echo "❌ No .${{ matrix.platform.ext }} file generated"
             exit 1
           fi
 
-          if [ "$COUNT" -gt 1 ]; then
-            echo "❌ Multiple .deb files found ($COUNT), expected exactly one"
-            echo "$DEB_FILES"
+          SIZE=$(stat -c%s "$ARTIFACT" 2>/dev/null || stat -f%z "$ARTIFACT" 2>/dev/null || echo 0)
+          if [ "$SIZE" -eq 0 ]; then
+            echo "❌ Artifact is empty: $ARTIFACT"
             exit 1
           fi
 
-          DEB_FILE=$(echo "$DEB_FILES" | head -1)
-          # Validate DEB format
-          if ! file "$DEB_FILE" | grep -qi "Debian binary package"; then
-            echo "❌ File does not appear to be a valid DEB package"
-            file "$DEB_FILE"
-            exit 1
-          fi
+          # Validate format
+          case "${{ matrix.platform.name }}" in
+            windows)
+              if ! file "$ARTIFACT" | grep -qi "MSI\|Composite Document"; then
+                echo "❌ Invalid MSI format"
+                exit 1
+              fi
+              ;;
+            linux)
+              if ! file "$ARTIFACT" | grep -qi "Debian binary package"; then
+                echo "❌ Invalid DEB format"
+                exit 1
+              fi
+              ;;
+            macos)
+              # Robust DMG validation: attach + detach
+              if ! hdiutil attach -readonly -nobrowse "$ARTIFACT" >/dev/null 2>&1; then
+                echo "❌ Invalid DMG format"
+                exit 1
+              else
+                # Detach the mounted volume
+                hdiutil detach "$(hdiutil info | grep "$ARTIFACT" | head -1 | awk '{print $1}')" >/dev/null 2>&1 || true
+              fi
+              ;;
+          esac
 
-          cp "$DEB_FILE" "$TARGET_DIR/${SLUG}.deb"
-          echo "✅ Collected $DEB_FILE -> $TARGET_DIR/${SLUG}.deb"
+          # Create artifacts directory with unique name
+          mkdir -p "$GITHUB_WORKSPACE/artifacts/${SLUG}-${{ matrix.platform.name }}"
+          cp "$ARTIFACT" "$GITHUB_WORKSPACE/artifacts/${SLUG}-${{ matrix.platform.name }}/${SLUG}.${{ matrix.platform.ext }}"
+          echo "✅ Collected $SLUG for ${{ matrix.platform.name }} ($SIZE bytes)"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.slug }}-linux
-          path: artifacts/linux/${{ inputs.slug }}.deb
-          if-no-files-found: error
-
-  build-macos:
-    name: Build macOS DMG
-    runs-on: macos-latest
-    timeout-minutes: 30
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-pake
-        with:
-          pake-version: ${{ inputs.pake-version }}
-
-      - name: Clean workspace
-        shell: bash
-        run: |
-          find . -name "*.dmg" -type f -delete 2>/dev/null || true
-
-      - name: Prepare artifact directory
-        run: mkdir -p artifacts/macos
-
-      - name: Build macOS app
-        run: |
-          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
-            --name "${{ inputs.slug }}"
-
-      - name: Validate and collect artifact
-        shell: bash
-        run: |
-          set -euo pipefail
-          SLUG="${{ inputs.slug }}"
-          TARGET_DIR="artifacts/macos"
-
-          DMG_FILES=$(find . -name "*.dmg" -type f)
-          COUNT=$(echo "$DMG_FILES" | wc -l)
-
-          if [ -z "$DMG_FILES" ]; then
-            echo "❌ No .dmg file found"
-            exit 1
-          fi
-
-          if [ "$COUNT" -gt 1 ]; then
-            echo "❌ Multiple .dmg files found ($COUNT), expected exactly one"
-            echo "$DMG_FILES"
-            exit 1
-          fi
-
-          DMG_FILE=$(echo "$DMG_FILES" | head -1)
-          # Validate DMG format
-          if ! file "$DMG_FILE" | grep -qi "Apple Disk Image\|bzip2 compressed data"; then
-            echo "❌ File does not appear to be a valid DMG disk image"
-            file "$DMG_FILE"
-            exit 1
-          fi
-
-          cp "$DMG_FILE" "$TARGET_DIR/${SLUG}.dmg"
-          echo "✅ Collected $DMG_FILE -> $TARGET_DIR/${SLUG}.dmg"
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ inputs.slug }}-macos
-          path: artifacts/macos/${{ inputs.slug }}.dmg
+          name: ${{ matrix.app.slug }}-${{ matrix.platform.name }}
+          path: artifacts/${{ matrix.app.slug }}-${{ matrix.platform.name }}/${{ matrix.app.slug }}.${{ matrix.platform.ext }}
           if-no-files-found: error

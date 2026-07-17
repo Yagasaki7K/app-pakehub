@@ -1,10 +1,10 @@
 name: Install Linux Dependencies
-description: Installs common dependencies for Linux builds
+description: Installs build dependencies for Linux
 
 runs:
   using: composite
   steps:
-    - name: Install dependencies
+    - name: Install packages
       shell: bash
       run: |
         sudo apt-get update

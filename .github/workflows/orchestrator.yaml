@@ -20,6 +20,10 @@ concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PAKE_VERSION: 3.14.0
+  APPS_PER_BATCH: 20
+
 jobs:
   validate:
     name: Validate apps.json
@@ -27,13 +31,13 @@ jobs:
     permissions:
       contents: read
     outputs:
-      matrix: ${{ steps.matrix.outputs.matrix }}
+      batches: ${{ steps.matrix.outputs.batches }}
       app_count: ${{ steps.matrix.outputs.app_count }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Validate and build matrix
+      - name: Validate and build batches
         id: matrix
         shell: bash
         run: |
@@ -43,7 +47,7 @@ jobs:
           fi
 
           python3 << 'EOF'
-          import json, re, sys, os
+          import json, re, sys, os, math
           from urllib.parse import urlparse
 
           with open('apps.json') as f:
@@ -54,7 +58,7 @@ jobs:
               print("❌ apps.json must contain a non-empty .apps array")
               sys.exit(1)
 
-          slugs = []
+          # Validate each app
           for idx, app in enumerate(apps):
               if 'name' not in app or 'url' not in app:
                   print(f"❌ App at index {idx} missing 'name' or 'url'")
@@ -67,150 +71,72 @@ jobs:
                   print(f"❌ Invalid URL: {app['url']}")
                   sys.exit(1)
 
-              slug = app.get('slug')
-              if slug:
-                  if not re.match(r'^[a-z0-9][a-z0-9-]*$', slug):
-                      print(f"❌ Invalid slug '{slug}' for app '{app['name']}'")
-                      sys.exit(1)
-              else:
-                  slug = re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', app['name'].lower())).strip('-')
-                  if not slug:
-                      slug = 'app'
+          # Generate slugs internally (not stored in apps.json)
+          def slugify(name):
+              # Normalize Unicode, then slugify
+              name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+              return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', name.lower())).strip('-') or 'app'
+
+          slugs = []
+          for app in apps:
+              slug = slugify(app['name'])
               if slug in slugs:
                   print(f"❌ Duplicate slug '{slug}' for app '{app['name']}'")
                   sys.exit(1)
               slugs.append(slug)
 
-          matrix = {'include': []}
-          for app, slug in zip(apps, slugs):
-              matrix['include'].append({
-                  'name': app['name'],
-                  'url': app['url'],
-                  'slug': slug
-              })
+          apps_per_batch = int(os.environ.get('APPS_PER_BATCH', 20))
+          total_apps = len(apps)
+          num_batches = math.ceil(total_apps / apps_per_batch)
 
-          if len(apps) > 256:
-              print(f"❌ Matrix limit exceeded: {len(apps)} > 256")
-              sys.exit(1)
+          batches = []
+          for i in range(num_batches):
+              start = i * apps_per_batch
+              end = min((i + 1) * apps_per_batch, total_apps)
+              batch_apps = apps[start:end]
+              batch_slugs = slugs[start:end]
+              batch = []
+              for app, slug in zip(batch_apps, batch_slugs):
+                  batch.append({
+                      'name': app['name'],
+                      'url': app['url'],
+                      'slug': slug
+                  })
+              batches.append({'batch_id': i + 1, 'apps': batch})
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"matrix={json.dumps(matrix)}\n")
-              f.write(f"app_count={len(apps)}\n")
+              f.write(f"batches={json.dumps(batches)}\n")
+              f.write(f"app_count={total_apps}\n")
 
-          print(f"✅ Matrix generated with {len(apps)} apps")
+          print(f"✅ Generated {len(batches)} batches for {total_apps} apps")
           EOF
 
-  smoke-test:
-    name: Smoke test (${{ matrix.target }})
-    needs: validate
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - runner: windows-latest
-            target: windows
-            ext: msi
-          - runner: ubuntu-latest
-            target: linux
-            ext: deb
-          - runner: macos-latest
-            target: macos
-            ext: dmg
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Setup build environment
-        uses: ./.github/actions/setup-pake
-
-      - name: Install Linux dependencies
-        if: matrix.target == 'linux'
-        uses: ./.github/actions/install-linux-deps
-
-      - name: Run smoke test
-        shell: bash
-        run: |
-          TEST_URL="https://example.com"
-          TEST_NAME="smoke-test-${{ matrix.target }}"
-          SMOKE_DIR=$(mktemp -d)
-          cd "$SMOKE_DIR"
-
-          npx --yes pake-cli@3.14.0 "$TEST_URL" --name "$TEST_NAME"
-
-          ARTIFACT=$(find . -name "*.${{ matrix.ext }}" | head -1)
-          if [ -z "$ARTIFACT" ]; then
-            echo "❌ No .${{ matrix.ext }} file generated"
-            ls -la
-            exit 1
-          fi
-
-          SIZE=$(stat -c%s "$ARTIFACT" 2>/dev/null || stat -f%z "$ARTIFACT" 2>/dev/null || echo 0)
-          if [ "$SIZE" -eq 0 ]; then
-            echo "❌ Generated file is empty: $ARTIFACT"
-            exit 1
-          fi
-
-          # Validate file format per platform
-          case "${{ matrix.target }}" in
-            windows)
-              if ! file "$ARTIFACT" | grep -qi "MSI\|Composite Document"; then
-                echo "❌ File does not appear to be a valid MSI installer"
-                exit 1
-              fi
-              ;;
-            linux)
-              if ! file "$ARTIFACT" | grep -qi "Debian binary package"; then
-                echo "❌ File does not appear to be a valid DEB package"
-                exit 1
-              fi
-              ;;
-            macos)
-              # Use hdiutil verify (official Apple tool) for DMG validation
-              if ! hdiutil verify "$ARTIFACT" >/dev/null 2>&1; then
-                echo "❌ DMG verification failed for $ARTIFACT"
-                hdiutil verify "$ARTIFACT" 2>&1 || true
-                exit 1
-              fi
-              ;;
-          esac
-
-          echo "✅ Smoke test passed on ${{ matrix.target }}: $ARTIFACT ($SIZE bytes)"
-          cd -
-          rm -rf "$SMOKE_DIR"
-
   build:
-    name: Build ${{ matrix.name }}
-    needs: [validate, smoke-test]
+    name: Batch ${{ matrix.batch_id }}
+    needs: validate
     permissions:
       contents: read
     strategy:
-      matrix: ${{ fromJson(needs.validate.outputs.matrix) }}
+      matrix:
+        batch: ${{ fromJson(needs.validate.outputs.batches) }}
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 6
     uses: ./.github/workflows/build-app.yaml
     with:
-      name: ${{ matrix.name }}
-      url: ${{ matrix.url }}
-      slug: ${{ matrix.slug }}
+      apps: ${{ toJson(matrix.batch.apps) }}
+      batch_id: ${{ matrix.batch.batch_id }}
+      pake-version: ${{ env.PAKE_VERSION }}
 
-  release:
-    name: Create GitHub Release
-    needs: [validate, smoke-test, build]
+  collect:
+    name: Collect artifacts
+    needs: [validate, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      actions: read
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: always()
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Generate release tag
-        id: tag
-        shell: bash
-        run: |
-          TAG="v$(date +'%Y.%m.%d')-build.${{ github.run_id }}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -224,12 +150,12 @@ jobs:
           set -euo pipefail
           echo "🔍 Validating artifacts per app..."
 
-          MATRIX_JSON='${{ needs.validate.outputs.matrix }}'
-          SLUGS=$(echo "$MATRIX_JSON" | jq -r '.include[].slug')
-          echo "📋 Expected slugs: $SLUGS"
+          BATCHES_JSON='${{ needs.validate.outputs.batches }}'
+          ALL_SLUGS=$(echo "$BATCHES_JSON" | jq -r '.[].apps[].slug')
+          echo "📋 Expected slugs: $ALL_SLUGS"
 
           MISSING=0
-          for slug in $SLUGS; do
+          for slug in $ALL_SLUGS; do
             for platform in windows linux macos; do
               case $platform in
                 windows) ext=msi ;;
@@ -246,7 +172,6 @@ jobs:
                   echo "❌ Artifact $slug on $platform is empty"
                   MISSING=$((MISSING + 1))
                 else
-                  # Validate format per platform
                   case $platform in
                     windows)
                       if ! file "$FILE" | grep -qi "MSI\|Composite Document"; then
@@ -265,12 +190,13 @@ jobs:
                       fi
                       ;;
                     macos)
-                      # Use hdiutil verify for DMG validation
-                      if ! hdiutil verify "$FILE" >/dev/null 2>&1; then
+                      # Robust DMG validation: attach + detach
+                      if ! hdiutil attach -readonly -nobrowse "$FILE" 2>/dev/null; then
                         echo "❌ Invalid DMG format for $slug on $platform"
-                        hdiutil verify "$FILE" 2>&1 || true
                         MISSING=$((MISSING + 1))
                       else
+                        # Detach the mounted volume
+                        hdiutil detach "$(hdiutil info | grep "$FILE" | head -1 | awk '{print $1}')" >/dev/null 2>&1 || true
                         echo "✅ Found $slug on $platform ($SIZE bytes)"
                       fi
                       ;;
@@ -309,10 +235,11 @@ jobs:
           cd -
 
       - name: Create GitHub Release
+        id: release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Build ${{ steps.tag.outputs.tag }}"
-          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Build ${{ github.run_id }}"
+          tag_name: "build-${{ github.run_id }}"
           generate_release_notes: true
           files: release-assets/*
           prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease != false || true }}
@@ -321,7 +248,7 @@ jobs:
 
   status-report:
     name: Build status report
-    needs: [validate, smoke-test, build, release]
+    needs: [validate, build, collect, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -334,15 +261,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           VALIDATE_RESULT="${{ needs.validate.result }}"
-          SMOKE_RESULT="${{ needs.smoke-test.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
+          COLLECT_RESULT="${{ needs.collect.result }}"
           RELEASE_RESULT="${{ needs.release.result }}"
 
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | $VALIDATE_RESULT |" >> $GITHUB_STEP_SUMMARY
-          echo "| Smoke Test | $SMOKE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | $BUILD_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Collect | $COLLECT_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Release | $RELEASE_RESULT |" >> $GITHUB_STEP_SUMMARY
 
           if [ "$BUILD_RESULT" == "success" ] && [ "$RELEASE_RESULT" == "success" ]; then

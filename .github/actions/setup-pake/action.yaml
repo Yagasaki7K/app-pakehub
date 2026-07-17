@@ -1,9 +1,9 @@
 name: Setup Pake Build Environment
-description: Sets up Node.js and Rust for Pake builds
+description: Sets up Node.js, Rust, and Pake CLI
 
 inputs:
   pake-version:
-    description: Pake CLI version (used for caching)
+    description: Pake CLI version
     required: false
     default: 3.14.0
 
@@ -14,6 +14,7 @@ runs:
       uses: actions/setup-node@v5
       with:
         node-version: 22
+        cache: npm
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
