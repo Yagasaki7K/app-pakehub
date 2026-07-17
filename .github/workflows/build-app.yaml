@@ -52,10 +52,22 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Verify environment
+        shell: bash
+        run: |
+          echo "🔍 Verifying environment..."
+          node --version
+          npm --version
+          rustc --version
+          cargo --version
 
       - name: Prepare artifact directory
         shell: bash
@@ -67,7 +79,12 @@ jobs:
 
       - name: Verify Pake
         shell: bash
-        run: pake --version
+        run: |
+          pake --version
+          # Check Tauri dependencies alignment
+          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
+            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
+          fi
 
       - name: Build Windows installer
         shell: bash
@@ -89,7 +106,7 @@ jobs:
             exit 1
           fi
 
-          # If multiple, pick the one with the shortest path (likely root)
+          # Pick the one with the shortest path (likely root)
           MSI_FILE=$(echo "$MSI_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
           if [ -z "$MSI_FILE" ]; then
             echo "❌ Could not determine correct .msi file"
@@ -128,10 +145,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Verify environment
+        run: |
+          echo "🔍 Verifying environment..."
+          node --version
+          npm --version
+          rustc --version
+          cargo --version
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/linux
@@ -153,7 +181,11 @@ jobs:
         run: npm install -g pake-cli@3.0.2
 
       - name: Verify Pake
-        run: pake --version
+        run: |
+          pake --version
+          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
+            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
+          fi
 
       - name: Build Linux installer
         run: |
@@ -213,10 +245,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: Verify environment
+        run: |
+          echo "🔍 Verifying environment..."
+          node --version
+          npm --version
+          rustc --version
+          cargo --version
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/macos
@@ -225,7 +268,11 @@ jobs:
         run: npm install -g pake-cli@3.0.2
 
       - name: Verify Pake
-        run: pake --version
+        run: |
+          pake --version
+          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
+            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
+          fi
 
       - name: Build macOS app
         run: |
