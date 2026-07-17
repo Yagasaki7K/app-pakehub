@@ -74,6 +74,12 @@ jobs:
           pake "${{ inputs.url }}" \
             --name "${{ inputs.name }}"
 
+      - name: List generated files (debug)
+        shell: bash
+        run: |
+          echo "Files in current directory after build:"
+          find . -maxdepth 2 -type f -name "*.msi" -o -name "*.exe" | sort
+
       - name: Collect installer
         shell: bash
         run: |
@@ -88,15 +94,15 @@ jobs:
           set -euo pipefail
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/windows"
+          # Remove old file
           find "$TARGET_DIR" -type f -iname "${SLUG}.msi" -delete 2>/dev/null || true
-          find "$TARGET_DIR" -type f -iname "*.msi" | head -1 | while read -r file; do
-            dir=$(dirname "$file")
-            base=$(basename "$file")
-            newname="${SLUG}.msi"
-            if [ "$base" != "$newname" ]; then
-              mv "$file" "$dir/$newname"
-            fi
-          done
+          # Find first .msi and rename
+          MSI_FILE=$(find "$TARGET_DIR" -type f -iname "*.msi" | head -1)
+          if [ -z "$MSI_FILE" ]; then
+            echo "❌ No .msi file found in $TARGET_DIR"
+            exit 1
+          fi
+          mv "$MSI_FILE" "$TARGET_DIR/${SLUG}.msi"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -159,6 +165,11 @@ jobs:
             --name "${{ inputs.name }}" \
             --targets deb
 
+      - name: List generated files (debug)
+        run: |
+          echo "Files in current directory after build:"
+          find . -maxdepth 2 -type f -name "*.deb" | sort
+
       - name: Collect installer
         run: |
           scripts/ci/collect-pake-artifacts.sh \
@@ -173,14 +184,12 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/linux"
           find "$TARGET_DIR" -type f -iname "${SLUG}.deb" -delete 2>/dev/null || true
-          find "$TARGET_DIR" -type f -iname "*.deb" | head -1 | while read -r file; do
-            dir=$(dirname "$file")
-            base=$(basename "$file")
-            newname="${SLUG}.deb"
-            if [ "$base" != "$newname" ]; then
-              mv "$file" "$dir/$newname"
-            fi
-          done
+          DEB_FILE=$(find "$TARGET_DIR" -type f -iname "*.deb" | head -1)
+          if [ -z "$DEB_FILE" ]; then
+            echo "❌ No .deb file found in $TARGET_DIR"
+            exit 1
+          fi
+          mv "$DEB_FILE" "$TARGET_DIR/${SLUG}.deb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -229,6 +238,12 @@ jobs:
           pake "${{ inputs.url }}" \
             --name "${{ inputs.name }}"
 
+      - name: List generated files (debug)
+        run: |
+          echo "Files in current directory after build:"
+          find . -maxdepth 2 -type d -name "*.app" | sort
+          ls -la
+
       - name: Find and convert .app to .dmg
         shell: bash
         run: |
@@ -236,10 +251,12 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/macos"
 
-          # Procura o .app gerado pelo Pake (máximo 2 níveis de profundidade)
-          APP=$(find . -maxdepth 2 -type d -name "*.app" | head -1)
+          # Procura o .app gerado pelo Pake (até 3 níveis de profundidade)
+          APP=$(find . -maxdepth 3 -type d -name "*.app" | head -1)
           if [ -z "$APP" ]; then
-            echo "❌ No .app bundle found. Pake build may have failed."
+            echo "❌ No .app bundle found. Listing current directory for debugging:"
+            ls -la
+            find . -maxdepth 3 -type d | sort
             exit 1
           fi
 
