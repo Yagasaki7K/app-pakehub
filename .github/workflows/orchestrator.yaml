@@ -69,7 +69,6 @@ jobs:
 
           # Generate slugs internally (not stored in apps.json)
           def slugify(name):
-              # Normalize Unicode, then slugify
               try:
                   import unicodedata
                   name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
@@ -125,7 +124,7 @@ jobs:
     with:
       apps: ${{ toJson(matrix.batch.apps) }}
       batch_id: ${{ matrix.batch.batch_id }}
-      pake-version: 3.14.0  # Fixed version directly
+      pake-version: 3.14.0
 
   collect:
     name: Collect artifacts
@@ -190,13 +189,11 @@ jobs:
                       fi
                       ;;
                     macos)
-                      # Robust DMG validation: attach + detach
-                      if ! hdiutil attach -readonly -nobrowse "$FILE" >/dev/null 2>&1; then
+                      # Use hdiutil verify (does not mount, only checks integrity)
+                      if ! hdiutil verify "$FILE" >/dev/null 2>&1; then
                         echo "❌ Invalid DMG format for $slug on $platform"
                         MISSING=$((MISSING + 1))
                       else
-                        # Detach the mounted volume
-                        hdiutil detach "$(hdiutil info | grep "$FILE" | head -1 | awk '{print $1}')" >/dev/null 2>&1 || true
                         echo "✅ Found $slug on $platform ($SIZE bytes)"
                       fi
                       ;;

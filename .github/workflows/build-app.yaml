@@ -122,11 +122,9 @@ jobs:
               fi
               ;;
             macos)
-              if ! hdiutil attach -readonly -nobrowse "$ARTIFACT" >/dev/null 2>&1; then
+              if ! hdiutil verify "$ARTIFACT" >/dev/null 2>&1; then
                 echo "❌ Invalid DMG format"
                 exit 1
-              else
-                hdiutil detach "$(hdiutil info | grep "$ARTIFACT" | head -1 | awk '{print $1}')" >/dev/null 2>&1 || true
               fi
               ;;
           esac
