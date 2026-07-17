@@ -31,7 +31,7 @@ jobs:
       app_count: ${{ steps.matrix.outputs.app_count }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Validate and build matrix
         id: matrix
@@ -118,11 +118,11 @@ jobs:
             ext: dmg
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
-        # No need to pass pake-version; uses default from action
+        # pake-version usa o default da action
 
       - name: Install Linux dependencies
         if: matrix.target == 'linux'
@@ -136,7 +136,6 @@ jobs:
           SMOKE_DIR=$(mktemp -d)
           cd "$SMOKE_DIR"
 
-          # Use npx --yes with fixed version
           npx --yes pake-cli@3.14.0 "$TEST_URL" --name "$TEST_NAME"
 
           ARTIFACT=$(find . -name "*.${{ matrix.ext }}" | head -1)
@@ -192,7 +191,6 @@ jobs:
       name: ${{ matrix.name }}
       url: ${{ matrix.url }}
       slug: ${{ matrix.slug }}
-      # pake-version not passed; uses default from reusable workflow
 
   release:
     name: Create GitHub Release
@@ -204,7 +202,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Generate release tag
         id: tag
@@ -247,7 +245,6 @@ jobs:
                   echo "❌ Artifact $slug on $platform is empty"
                   MISSING=$((MISSING + 1))
                 else
-                  # Validate format for release artifacts too
                   case $platform in
                     windows)
                       if ! file "$FILE" | grep -qi "MSI\|Composite Document"; then

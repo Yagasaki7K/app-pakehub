@@ -1,5 +1,5 @@
 name: Setup Pake Build Environment
-description: Sets up Node.js and Rust for Pake builds with caching
+description: Sets up Node.js and Rust for Pake builds
 
 inputs:
   pake-version:
@@ -10,20 +10,12 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Setup Node.js with cache
-      uses: actions/setup-node@v4
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
       with:
         node-version: 22
-        cache: npm
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
-
-    - name: Cache Pake CLI installation
-      uses: actions/cache@v4
-      with:
-        path: ~/.npm
-        key: pake-${{ inputs.pake-version }}-${{ runner.os }}
-        restore-keys: pake-${{ runner.os }}-
