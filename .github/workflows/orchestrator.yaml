@@ -4,7 +4,12 @@ on:
   push:
     paths:
       - apps.json
+      - .github/workflows/**
+      - .github/actions/**
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: orchestrator-${{ github.ref }}
@@ -18,11 +23,12 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      app_count: ${{ steps.matrix.outputs.app_count }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate and build matrix
+      - name: Generate matrix with slugs from names
         id: matrix
         shell: bash
         run: |
@@ -30,19 +36,58 @@ jobs:
             echo "❌ apps.json not found"
             exit 1
           fi
-          if ! jq -e '.apps | length > 0' apps.json > /dev/null; then
-            echo "❌ apps.json must contain an .apps array"
-            exit 1
-          fi
-          if ! jq -e '.apps | all(has("name") and has("url"))' apps.json > /dev/null; then
-            echo "❌ Each app must have 'name' and 'url'"
-            exit 1
-          fi
 
-          # Build matrix JSON
-          MATRIX=$(jq -c '{ include: .apps }' apps.json)
-          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "✅ Matrix generated with $(echo "$MATRIX" | jq '.include | length') apps"
+          python3 << 'EOF'
+          import json, re, sys, os
+          from pathlib import Path
+
+          with open('apps.json') as f:
+              data = json.load(f)
+              apps = data.get('apps', [])
+
+          if not apps:
+              print("❌ apps.json must contain a non-empty .apps array")
+              sys.exit(1)
+
+          # Validate each app
+          for app in apps:
+              if 'name' not in app or 'url' not in app:
+                  print(f"❌ Each app must have 'name' and 'url'")
+                  sys.exit(1)
+              if not app['url'].startswith(('http://', 'https://')):
+                  print(f"❌ Invalid URL: {app['url']}")
+                  sys.exit(1)
+
+          # Generate slug from name
+          def slugify(name):
+              return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', name.lower())).strip('-')
+
+          # Build matrix with slugs
+          matrix = {'include': []}
+          slugs = []
+          for app in apps:
+              slug = slugify(app['name'])
+              # Check for duplicate slugs BEFORE adding
+              if slug in slugs:
+                  print(f"❌ Duplicate slug '{slug}' generated from names: check for similar names like 'My App' and 'My-App'")
+                  sys.exit(1)
+              slugs.append(slug)
+              matrix['include'].append({
+                  'name': app['name'],
+                  'url': app['url'],
+                  'slug': slug
+              })
+
+          if len(apps) > 256:
+              print(f"❌ Matrix limit exceeded: {len(apps)} > 256")
+              sys.exit(1)
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"matrix={json.dumps(matrix)}\n")
+              f.write(f"app_count={len(apps)}\n")
+
+          print(f"✅ Matrix generated with {len(apps)} apps")
+          EOF
 
   build:
     name: Build ${{ matrix.name }}
@@ -51,96 +96,167 @@ jobs:
       contents: read
     strategy:
       matrix: ${{ fromJson(needs.validate.outputs.matrix) }}
-      fail-fast: true
+      fail-fast: false
+      max-parallel: 6
     uses: ./.github/workflows/build-app.yaml
     with:
       name: ${{ matrix.name }}
       url: ${{ matrix.url }}
+      slug: ${{ matrix.slug }}
 
-  collect:
-    name: Collect artifacts
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    if: always()
+  smoke-test:
+    name: Smoke test (${{ matrix.target }})
+    needs: validate
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - runner: windows-latest
+            target: windows
+            ext: msi
+          - runner: ubuntu-latest
+            target: linux
+            ext: deb
+          - runner: macos-latest
+            target: macos
+            ext: dmg
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup build environment
+        uses: ./.github/actions/setup-pake
+        with:
+          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
+          pake-repo: tw93/Pake
+          pake-package: pake-cli
+          pake-bin: pake
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          PAKE_BIN="$HOME/.pake-install/node_modules/.bin/pake"
+          TEST_URL="https://example.com"
+          TEST_NAME="smoke-test-${{ matrix.target }}"
+          SMOKE_DIR=$(mktemp -d)
+          cd "$SMOKE_DIR"
+
+          if [ "${{ matrix.target }}" == "linux" ]; then
+            $PAKE_BIN "$TEST_URL" --name "$TEST_NAME"
+            ARTIFACT=$(find . -name "*.deb" | head -1)
+          else
+            $PAKE_BIN "$TEST_URL" --name "$TEST_NAME"
+            ARTIFACT=$(find . -name "*.${{ matrix.ext }}" | head -1)
+          fi
+
+          if [ -z "$ARTIFACT" ]; then
+            echo "❌ Smoke test failed for ${{ matrix.target }}"
+            ls -la
+            exit 1
+          fi
+          echo "✅ Smoke test passed for ${{ matrix.target }}: $ARTIFACT"
+          cd -
+          rm -rf "$SMOKE_DIR"
+
+  release:
+    name: Create GitHub Release
+    needs: [validate, build, smoke-test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate release tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="v$(date +'%Y.%m.%d')-build.${{ github.run_id }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: false
 
-      - name: Normalize and copy to projects/
+      - name: Validate artifacts per application
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p projects
-          rm -rf projects/* 2>/dev/null || true
-          find artifacts -type f \( -iname "*.msi" -o -iname "*.deb" -o -iname "*.dmg" \) | while read -r file; do
-            filename=$(basename "$file")
-            echo "📦 Copying $filename to projects/"
-            cp "$file" "projects/$filename"
-          done
+          echo "🔍 Validating artifacts per app..."
 
-      - name: Generate app list and update README.md / projects.md
-        shell: bash
-        run: |
-          set -euo pipefail
+          MATRIX_JSON='${{ needs.validate.outputs.matrix }}'
+          SLUGS=$(echo "$MATRIX_JSON" | jq -r '.include[].slug')
+          echo "📋 Expected slugs: $SLUGS"
 
-          generate_app_list() {
-            local ext="$1"
-            local os_name="$2"
-            echo "## $os_name (.$ext)"
-            for file in projects/*.$ext; do
-              if [ -f "$file" ]; then
-                slug=$(basename "$file" .$ext)
-                base_slug=$(echo "$slug" | sed 's/-[a-f0-9]\{4\}$//')
-                name=$(jq -r ".apps[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$base_slug\") | .name" apps.json 2>/dev/null || echo "")
-                if [ -z "$name" ] || [ "$name" = "null" ]; then
-                  name=$(echo "$base_slug" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
-                fi
-                REPO="${{ github.repository }}"
-                echo "- [$name ($os_name)](https://github.com/$REPO/raw/refs/heads/main/projects/$slug.$ext)"
+          MISSING=0
+          for slug in $SLUGS; do
+            for ext in msi deb dmg; do
+              if [ ! -f "artifacts/${slug}-${ext}/${slug}.${ext}" ]; then
+                echo "❌ Missing artifact for $slug.$ext"
+                MISSING=$((MISSING + 1))
+              else
+                echo "✅ Found $slug.$ext"
               fi
             done
-          }
+          done
 
-          CONTENT="# Projects to Download\n\n"
-          CONTENT+="$(generate_app_list msi "Windows")\n\n"
-          CONTENT+="$(generate_app_list deb "Linux")\n\n"
-          CONTENT+="$(generate_app_list dmg "macOS")\n\n"
-
-          if [ -f README.md ] && grep -q "<!-- PAKE:APPS:START -->" README.md; then
-            sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" README.md
-            echo "✅ README.md updated."
-          else
-            echo "⚠️ README.md missing markers. Skipping."
+          if [ "$MISSING" -gt 0 ]; then
+            echo "❌ $MISSING artifacts missing"
+            exit 1
           fi
+          echo "✅ All artifacts present for all apps"
 
-          if [ -f projects.md ] && grep -q "<!-- PAKE:APPS:START -->" projects.md; then
-            sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" projects.md
-            echo "✅ projects.md updated."
-          else
-            echo "⚠️ projects.md missing markers. Skipping."
-          fi
-
-      - name: Check for changes and commit
-        id: changes
+      - name: Prepare release assets
+        shell: bash
         run: |
-          if git status --porcelain -- projects/ README.md projects.md 2>/dev/null | grep -q .; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) | while read -r file; do
+            cp "$file" release-assets/
+          done
 
-      - name: Commit changes
-        if: steps.changes.outputs.changed == 'true'
+      - name: Generate SHA256 checksums
+        shell: bash
         run: |
-          git config user.name "Anderson Marlon"
-          git config user.email "anderson18.marlon@gmail.com"
-          git add projects/ README.md projects.md
-          git commit -m "Update builds and app list via orchestrator [skip ci]"
-          git push
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          cd -
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Build ${{ steps.tag.outputs.tag }}"
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: release-assets/*
+          prerelease: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  status-report:
+    name: Build status report
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    if: always()
+    steps:
+      - name: Generate status summary
+        shell: bash
+        run: |
+          echo "## 📊 Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          APPS=$(jq -r '.apps[].name' apps.json 2>/dev/null || echo "0")
+          TOTAL=$(echo "$APPS" | wc -l)
+          echo "**Total applications:** $TOTAL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Some builds failed. Check the logs." >> $GITHUB_STEP_SUMMARY
+            exit 1
+          fi

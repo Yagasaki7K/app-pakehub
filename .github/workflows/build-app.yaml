@@ -11,6 +11,10 @@ on:
         description: Application URL
         required: true
         type: string
+      slug:
+        description: Application slug
+        required: true
+        type: string
   workflow_call:
     inputs:
       name:
@@ -21,295 +25,162 @@ on:
         description: Application URL
         required: true
         type: string
+      slug:
+        description: Application slug
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-${{ inputs.name }}-${{ github.ref }}
+  group: build-${{ inputs.slug }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build-windows:
     name: Build Windows MSI
     runs-on: windows-latest
-    outputs:
-      slug: ${{ steps.slug.outputs.slug }}
+    timeout-minutes: 30
     steps:
-      - name: Generate slug and sanitized name
-        id: slug
-        shell: bash
-        run: |
-          # Sanitize name for Pake (lowercase, alphanumeric, dashes only)
-          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed 's/[^a-z0-9]/-/g' \
-            | sed 's/-\{2,\}/-/g' \
-            | sed 's/^-//' \
-            | sed 's/-$//')
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG="${SANITIZED_NAME}-${HASH}"
-          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
-          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup build environment
+        uses: ./.github/actions/setup-pake
         with:
-          toolchain: stable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Verify environment
-        shell: bash
-        run: |
-          echo "🔍 Verifying build environment..."
-          echo "Node: $(node --version)"
-          echo "npm: $(npm --version)"
-          echo "Rustc: $(rustc --version)"
-          echo "Cargo: $(cargo --version)"
+          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
+          pake-repo: tw93/Pake
+          pake-package: pake-cli
+          pake-bin: pake
 
       - name: Prepare artifact directory
         shell: bash
         run: mkdir -p artifacts/windows
 
-      - name: Install Pake CLI (pinned version)
-        shell: bash
-        run: npm install -g pake-cli@3.1.0
-
-      - name: Verify Pake
-        shell: bash
-        run: |
-          pake --version
-          echo "✅ Pake installed successfully"
-
       - name: Build Windows installer
         shell: bash
         run: |
-          pake "${{ inputs.url }}" \
-            --name "${{ steps.slug.outputs.sanitized_name }}"
+          # Pake generates .msi by default on Windows
+          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+            --name "${{ inputs.slug }}"
 
-      - name: Collect and normalize Windows installer
+      - name: Collect and upload artifact
         shell: bash
         run: |
           set -euo pipefail
-          SLUG="${{ steps.slug.outputs.slug }}"
+          SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/windows"
-
-          MSI_FILES=$(find . -name "*.msi" -type f)
-          if [ -z "$MSI_FILES" ]; then
-            echo "❌ No .msi file found"
+          MSI=$(find . -name "*.msi" | head -1)
+          if [ -z "$MSI" ]; then
+            echo "❌ No .msi found"
             exit 1
           fi
-
-          MSI_FILE=$(echo "$MSI_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
-          if [ -z "$MSI_FILE" ]; then
-            echo "❌ Could not determine correct .msi file"
-            exit 1
-          fi
-
-          cp "$MSI_FILE" "$TARGET_DIR/${SLUG}.msi"
-          echo "✅ Collected $MSI_FILE -> $TARGET_DIR/${SLUG}.msi"
+          cp "$MSI" "$TARGET_DIR/${SLUG}.msi"
+          echo "✅ Collected $MSI -> $TARGET_DIR/${SLUG}.msi"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.slug.outputs.slug }}-windows
-          path: artifacts/windows/${{ steps.slug.outputs.slug }}.msi
+          name: ${{ inputs.slug }}-windows
+          path: artifacts/windows/${{ inputs.slug }}.msi
           if-no-files-found: error
 
   build-linux:
     name: Build Linux DEB
     runs-on: ubuntu-latest
-    outputs:
-      slug: ${{ steps.slug.outputs.slug }}
+    timeout-minutes: 30
     steps:
-      - name: Generate slug and sanitized name
-        id: slug
-        shell: bash
-        run: |
-          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed 's/[^a-z0-9]/-/g' \
-            | sed 's/-\{2,\}/-/g' \
-            | sed 's/^-//' \
-            | sed 's/-$//')
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG="${SANITIZED_NAME}-${HASH}"
-          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
-          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup build environment
+        uses: ./.github/actions/setup-pake
         with:
-          toolchain: stable
+          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
+          pake-repo: tw93/Pake
+          pake-package: pake-cli
+          pake-bin: pake
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Verify environment
+      - name: Install Linux dependencies
         run: |
-          echo "🔍 Verifying build environment..."
-          echo "Node: $(node --version)"
-          echo "npm: $(npm --version)"
-          echo "Rustc: $(rustc --version)"
-          echo "Cargo: $(cargo --version)"
+          sudo apt-get update
+          sudo apt-get install -y build-essential libssl-dev libgtk-3-dev \
+            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libpango1.0-dev libcairo2-dev
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/linux
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            libssl-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            libpango1.0-dev \
-            libcairo2-dev
-
-      - name: Install Pake CLI (pinned version)
-        run: npm install -g pake-cli@3.1.0
-
-      - name: Verify Pake
-        run: |
-          pake --version
-          echo "✅ Pake installed successfully"
-
       - name: Build Linux installer
         run: |
-          pake "${{ inputs.url }}" \
-            --name "${{ steps.slug.outputs.sanitized_name }}" \
-            --targets deb
+          # Pake generates .deb by default on Linux
+          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+            --name "${{ inputs.slug }}"
 
-      - name: Collect and normalize Linux installer
+      - name: Collect and upload artifact
         shell: bash
         run: |
           set -euo pipefail
-          SLUG="${{ steps.slug.outputs.slug }}"
+          SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/linux"
-
-          DEB_FILES=$(find . -name "*.deb" -type f)
-          if [ -z "$DEB_FILES" ]; then
-            echo "❌ No .deb file found"
+          DEB=$(find . -name "*.deb" | head -1)
+          if [ -z "$DEB" ]; then
+            echo "❌ No .deb found"
             exit 1
           fi
-
-          DEB_FILE=$(echo "$DEB_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
-          if [ -z "$DEB_FILE" ]; then
-            echo "❌ Could not determine correct .deb file"
-            exit 1
-          fi
-
-          cp "$DEB_FILE" "$TARGET_DIR/${SLUG}.deb"
-          echo "✅ Collected $DEB_FILE -> $TARGET_DIR/${SLUG}.deb"
+          cp "$DEB" "$TARGET_DIR/${SLUG}.deb"
+          echo "✅ Collected $DEB -> $TARGET_DIR/${SLUG}.deb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.slug.outputs.slug }}-linux
-          path: artifacts/linux/${{ steps.slug.outputs.slug }}.deb
+          name: ${{ inputs.slug }}-linux
+          path: artifacts/linux/${{ inputs.slug }}.deb
           if-no-files-found: error
 
   build-macos:
     name: Build macOS DMG
     runs-on: macos-latest
-    outputs:
-      slug: ${{ steps.slug.outputs.slug }}
+    timeout-minutes: 30
     steps:
-      - name: Generate slug and sanitized name
-        id: slug
-        shell: bash
-        run: |
-          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
-            | tr '[:upper:]' '[:lower:]' \
-            | sed 's/[^a-z0-9]/-/g' \
-            | sed 's/-\{2,\}/-/g' \
-            | sed 's/^-//' \
-            | sed 's/-$//')
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG="${SANITIZED_NAME}-${HASH}"
-          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
-          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - name: Setup build environment
+        uses: ./.github/actions/setup-pake
         with:
-          toolchain: stable
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Verify environment
-        run: |
-          echo "🔍 Verifying build environment..."
-          echo "Node: $(node --version)"
-          echo "npm: $(npm --version)"
-          echo "Rustc: $(rustc --version)"
-          echo "Cargo: $(cargo --version)"
+          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
+          pake-repo: tw93/Pake
+          pake-package: pake-cli
+          pake-bin: pake
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/macos
 
-      - name: Install Pake CLI (pinned version)
-        run: npm install -g pake-cli@3.1.0
-
-      - name: Verify Pake
-        run: |
-          pake --version
-          echo "✅ Pake installed successfully"
-
       - name: Build macOS app
         run: |
-          pake "${{ inputs.url }}" \
-            --name "${{ steps.slug.outputs.sanitized_name }}"
+          # Pake generates .dmg by default on macOS
+          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+            --name "${{ inputs.slug }}"
 
-      - name: Collect and normalize macOS DMG
+      - name: Collect and upload artifact
         shell: bash
         run: |
           set -euo pipefail
-          SLUG="${{ steps.slug.outputs.slug }}"
+          SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/macos"
-
-          DMG_FILES=$(find . -name "*.dmg" -type f)
-          if [ -z "$DMG_FILES" ]; then
-            echo "❌ No .dmg file found"
+          DMG=$(find . -name "*.dmg" | head -1)
+          if [ -z "$DMG" ]; then
+            echo "❌ No .dmg found"
             exit 1
           fi
-
-          DMG_FILE=$(echo "$DMG_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
-          if [ -z "$DMG_FILE" ]; then
-            echo "❌ Could not determine correct .dmg file"
-            exit 1
-          fi
-
-          cp "$DMG_FILE" "$TARGET_DIR/${SLUG}.dmg"
-          echo "✅ Collected $DMG_FILE -> $TARGET_DIR/${SLUG}.dmg"
+          cp "$DMG" "$TARGET_DIR/${SLUG}.dmg"
+          echo "✅ Collected $DMG -> $TARGET_DIR/${SLUG}.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.slug.outputs.slug }}-macos
-          path: artifacts/macos/${{ steps.slug.outputs.slug }}.dmg
+          name: ${{ inputs.slug }}-macos
+          path: artifacts/macos/${{ inputs.slug }}.dmg
           if-no-files-found: error
