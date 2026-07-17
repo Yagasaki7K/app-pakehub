@@ -54,14 +54,15 @@ jobs:
           set -euo pipefail
           TIMESTAMP=${{ steps.ts.outputs.timestamp }}
           WORKFLOW="build-app.yaml"
+          BRANCH="${{ github.ref_name }}"
           TOTAL_APPS=$(jq '. | length' apps.json)
           COMPLETED=0
 
           echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP) – Total apps: $TOTAL_APPS"
 
           for i in {1..120}; do
-            # List runs for the current ref only
-            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --ref "${{ github.ref }}" --json databaseId,status,createdAt --limit 200)
+            # List runs for the current branch only
+            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --json databaseId,status,createdAt --limit 200)
             RUNS=$(echo "$RUNS_JSON" | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
 
             if [ -z "$RUNS" ]; then
@@ -108,7 +109,8 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          for run in $(gh run list --workflow build-app.yaml --ref "${{ github.ref }}" --status completed --json databaseId --jq '.[].databaseId'); do
+          BRANCH="${{ github.ref_name }}"
+          for run in $(gh run list --workflow build-app.yaml --branch "$BRANCH" --status completed --json databaseId --jq '.[].databaseId'); do
             gh run download "$run" -D artifacts/
           done
         env:
