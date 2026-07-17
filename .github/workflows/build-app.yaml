@@ -12,9 +12,14 @@ on:
         required: true
         type: string
       slug:
-        description: Application slug
+        description: Application slug (stable identifier)
         required: true
         type: string
+      pake-version:
+        description: Pake CLI version
+        required: false
+        type: string
+        default: 3.14.0
   workflow_call:
     inputs:
       name:
@@ -26,9 +31,14 @@ on:
         required: true
         type: string
       slug:
-        description: Application slug
+        description: Application slug (stable identifier)
         required: true
         type: string
+      pake-version:
+        description: Pake CLI version
+        required: false
+        type: string
+        default: 3.14.0
 
 permissions:
   contents: read
@@ -49,10 +59,12 @@ jobs:
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
         with:
-          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
-          pake-repo: tw93/Pake
-          pake-package: pake-cli
-          pake-bin: pake
+          pake-version: ${{ inputs.pake-version }}
+
+      - name: Clean workspace
+        shell: bash
+        run: |
+          find . -name "*.msi" -type f -delete 2>/dev/null || true
 
       - name: Prepare artifact directory
         shell: bash
@@ -61,23 +73,40 @@ jobs:
       - name: Build Windows installer
         shell: bash
         run: |
-          # Pake generates .msi by default on Windows
-          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
             --name "${{ inputs.slug }}"
 
-      - name: Collect and upload artifact
+      - name: Validate and collect artifact
         shell: bash
         run: |
           set -euo pipefail
           SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/windows"
-          MSI=$(find . -name "*.msi" | head -1)
-          if [ -z "$MSI" ]; then
-            echo "❌ No .msi found"
+
+          MSI_FILES=$(find . -name "*.msi" -type f)
+          COUNT=$(echo "$MSI_FILES" | wc -l)
+
+          if [ -z "$MSI_FILES" ]; then
+            echo "❌ No .msi file found"
             exit 1
           fi
-          cp "$MSI" "$TARGET_DIR/${SLUG}.msi"
-          echo "✅ Collected $MSI -> $TARGET_DIR/${SLUG}.msi"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "❌ Multiple .msi files found ($COUNT), expected exactly one"
+            echo "$MSI_FILES"
+            exit 1
+          fi
+
+          MSI_FILE=$(echo "$MSI_FILES" | head -1)
+          # Validate MSI format
+          if ! file "$MSI_FILE" | grep -qi "MSI\|Composite Document"; then
+            echo "❌ File does not appear to be a valid MSI installer"
+            file "$MSI_FILE"
+            exit 1
+          fi
+
+          cp "$MSI_FILE" "$TARGET_DIR/${SLUG}.msi"
+          echo "✅ Collected $MSI_FILE -> $TARGET_DIR/${SLUG}.msi"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -97,40 +126,55 @@ jobs:
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
         with:
-          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
-          pake-repo: tw93/Pake
-          pake-package: pake-cli
-          pake-bin: pake
+          pake-version: ${{ inputs.pake-version }}
 
       - name: Install Linux dependencies
+        uses: ./.github/actions/install-linux-deps
+
+      - name: Clean workspace
+        shell: bash
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libssl-dev libgtk-3-dev \
-            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
-            libpango1.0-dev libcairo2-dev
+          find . -name "*.deb" -type f -delete 2>/dev/null || true
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/linux
 
       - name: Build Linux installer
         run: |
-          # Pake generates .deb by default on Linux
-          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
             --name "${{ inputs.slug }}"
 
-      - name: Collect and upload artifact
+      - name: Validate and collect artifact
         shell: bash
         run: |
           set -euo pipefail
           SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/linux"
-          DEB=$(find . -name "*.deb" | head -1)
-          if [ -z "$DEB" ]; then
-            echo "❌ No .deb found"
+
+          DEB_FILES=$(find . -name "*.deb" -type f)
+          COUNT=$(echo "$DEB_FILES" | wc -l)
+
+          if [ -z "$DEB_FILES" ]; then
+            echo "❌ No .deb file found"
             exit 1
           fi
-          cp "$DEB" "$TARGET_DIR/${SLUG}.deb"
-          echo "✅ Collected $DEB -> $TARGET_DIR/${SLUG}.deb"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "❌ Multiple .deb files found ($COUNT), expected exactly one"
+            echo "$DEB_FILES"
+            exit 1
+          fi
+
+          DEB_FILE=$(echo "$DEB_FILES" | head -1)
+          # Validate DEB format
+          if ! file "$DEB_FILE" | grep -qi "Debian binary package"; then
+            echo "❌ File does not appear to be a valid DEB package"
+            file "$DEB_FILE"
+            exit 1
+          fi
+
+          cp "$DEB_FILE" "$TARGET_DIR/${SLUG}.deb"
+          echo "✅ Collected $DEB_FILE -> $TARGET_DIR/${SLUG}.deb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -150,33 +194,52 @@ jobs:
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
         with:
-          pake-ref: 078fab3fc7b206bf8128dd9eb73ca88e76d34db4
-          pake-repo: tw93/Pake
-          pake-package: pake-cli
-          pake-bin: pake
+          pake-version: ${{ inputs.pake-version }}
+
+      - name: Clean workspace
+        shell: bash
+        run: |
+          find . -name "*.dmg" -type f -delete 2>/dev/null || true
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/macos
 
       - name: Build macOS app
         run: |
-          # Pake generates .dmg by default on macOS
-          $HOME/.pake-install/node_modules/.bin/pake "${{ inputs.url }}" \
+          npx --yes pake-cli@${{ inputs.pake-version }} "${{ inputs.url }}" \
             --name "${{ inputs.slug }}"
 
-      - name: Collect and upload artifact
+      - name: Validate and collect artifact
         shell: bash
         run: |
           set -euo pipefail
           SLUG="${{ inputs.slug }}"
           TARGET_DIR="artifacts/macos"
-          DMG=$(find . -name "*.dmg" | head -1)
-          if [ -z "$DMG" ]; then
-            echo "❌ No .dmg found"
+
+          DMG_FILES=$(find . -name "*.dmg" -type f)
+          COUNT=$(echo "$DMG_FILES" | wc -l)
+
+          if [ -z "$DMG_FILES" ]; then
+            echo "❌ No .dmg file found"
             exit 1
           fi
-          cp "$DMG" "$TARGET_DIR/${SLUG}.dmg"
-          echo "✅ Collected $DMG -> $TARGET_DIR/${SLUG}.dmg"
+
+          if [ "$COUNT" -gt 1 ]; then
+            echo "❌ Multiple .dmg files found ($COUNT), expected exactly one"
+            echo "$DMG_FILES"
+            exit 1
+          fi
+
+          DMG_FILE=$(echo "$DMG_FILES" | head -1)
+          # Validate DMG format
+          if ! file "$DMG_FILE" | grep -qi "Apple Disk Image\|bzip2 compressed data"; then
+            echo "❌ File does not appear to be a valid DMG disk image"
+            file "$DMG_FILE"
+            exit 1
+          fi
+
+          cp "$DMG_FILE" "$TARGET_DIR/${SLUG}.dmg"
+          echo "✅ Collected $DMG_FILE -> $TARGET_DIR/${SLUG}.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

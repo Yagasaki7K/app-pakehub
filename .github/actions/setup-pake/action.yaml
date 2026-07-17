@@ -1,82 +1,29 @@
 name: Setup Pake Build Environment
-description: Sets up Node.js, Rust, and Pake from official repository with deterministic cache
+description: Sets up Node.js and Rust for Pake builds with caching
 
 inputs:
-  pake-ref:
-    description: Git reference (commit SHA) - MUST be a full 40-character SHA
-    required: true
-  pake-repo:
-    description: GitHub repository
-    required: true
-    default: tw93/Pake
-  pake-package:
-    description: NPM package name
-    required: true
-    default: pake-cli
-  pake-bin:
-    description: Binary name
-    required: true
-    default: pake
+  pake-version:
+    description: Pake CLI version (used for caching)
+    required: false
+    default: 3.14.0
 
 runs:
   using: composite
   steps:
-    - name: Setup Node.js
+    - name: Setup Node.js with cache
       uses: actions/setup-node@v4
       with:
         node-version: 22
+        cache: npm
 
     - name: Setup Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
 
-    - name: Prepare isolated installation directory
-      shell: bash
-      run: |
-        rm -rf "$HOME/.pake-install"
-        mkdir -p "$HOME/.pake-install"
-        echo "PAKE_HOME=$HOME/.pake-install" >> "$GITHUB_ENV"
-
-    - name: Cache npm packages (deterministic)
+    - name: Cache Pake CLI installation
       uses: actions/cache@v4
       with:
         path: ~/.npm
-        key: pake-${{ inputs.pake-ref }}-${{ runner.os }}-npm
-        restore-keys: pake-${{ runner.os }}-npm
-
-    - name: Install Pake CLI
-      shell: bash
-      run: |
-        set -euo pipefail
-        cd "$PAKE_HOME"
-        echo '{}' > package.json
-        npm install "github:${{ inputs.pake-repo }}#${{ inputs.pake-ref }}" --save-dev --prefer-offline
-
-        if [ ! -d "node_modules/${{ inputs.pake-package }}" ]; then
-          echo "❌ Package '${{ inputs.pake-package }}' not found"
-          echo "Available packages:"
-          ls node_modules | head -20 || echo "No packages"
-          exit 1
-        fi
-
-        if [ ! -f "node_modules/.bin/${{ inputs.pake-bin }}" ]; then
-          echo "❌ Binary '${{ inputs.pake-bin }}' not found"
-          echo "Available binaries:"
-          ls node_modules/.bin/ | head -20 || echo "No binaries"
-          exit 1
-        fi
-
-        echo "✅ Pake installed successfully"
-        echo "${{ inputs.pake-ref }}" > INSTALLED_REF
-
-    - name: Add to PATH
-      shell: bash
-      run: |
-        echo "$HOME/.pake-install/node_modules/.bin" >> "$GITHUB_PATH"
-
-    - name: Diagnostic
-      shell: bash
-      run: |
-        PAKE_BIN="$HOME/.pake-install/node_modules/.bin/${{ inputs.pake-bin }}"
-        $PAKE_BIN --version || echo "⚠️ Could not get version"
+        key: pake-${{ inputs.pake-version }}-${{ runner.os }}
+        restore-keys: pake-${{ runner.os }}-
