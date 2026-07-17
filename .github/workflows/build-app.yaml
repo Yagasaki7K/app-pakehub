@@ -83,7 +83,11 @@ jobs:
         run: |
           set -euo pipefail
           SLUG="${{ steps.slug.outputs.slug }}"
-          find artifacts/windows -type f -iname "*.msi" | while read -r file; do
+          TARGET_DIR="artifacts/windows"
+          # Remove qualquer arquivo .msi antigo com o mesmo nome (evita conflitos)
+          find "$TARGET_DIR" -type f -iname "${SLUG}.msi" -delete 2>/dev/null || true
+          # Renomeia o primeiro .msi encontrado
+          find "$TARGET_DIR" -type f -iname "*.msi" | head -1 | while read -r file; do
             dir=$(dirname "$file")
             base=$(basename "$file")
             newname="${SLUG}.msi"
@@ -167,7 +171,11 @@ jobs:
         run: |
           set -euo pipefail
           SLUG="${{ steps.slug.outputs.slug }}"
-          find artifacts/linux -type f -iname "*.deb" | while read -r file; do
+          TARGET_DIR="artifacts/linux"
+          # Remove qualquer arquivo .deb antigo com o mesmo nome
+          find "$TARGET_DIR" -type f -iname "${SLUG}.deb" -delete 2>/dev/null || true
+          # Renomeia o primeiro .deb encontrado
+          find "$TARGET_DIR" -type f -iname "*.deb" | head -1 | while read -r file; do
             dir=$(dirname "$file")
             base=$(basename "$file")
             newname="${SLUG}.deb"
@@ -183,4 +191,78 @@ jobs:
         with:
           name: ${{ steps.slug.outputs.slug }}-linux
           path: artifacts/linux/${{ steps.slug.outputs.slug }}.deb
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS DMG
+    runs-on: macos-latest
+    outputs:
+      slug: ${{ steps.slug.outputs.slug }}
+    steps:
+      - name: Generate slug
+        id: slug
+        shell: bash
+        run: |
+          SLUG=$(printf '%s' "${{ inputs.name }}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's/[^a-z0-9]/-/g' \
+            | sed 's/-\{2,\}/-/g' \
+            | sed 's/^-//' \
+            | sed 's/-$//')
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepare artifact directory
+        run: mkdir -p artifacts/macos
+
+      - name: Install Pake CLI
+        run: npm install -g pake-cli
+
+      - name: Verify Pake
+        run: pake --version
+
+      - name: Build macOS installer
+        run: |
+          pake "${{ inputs.url }}" \
+            --name "${{ inputs.name }}"
+
+      - name: Collect installer
+        run: |
+          scripts/ci/collect-pake-artifacts.sh \
+            --kind macos \
+            --search-root . \
+            --output-dir artifacts/macos
+
+      - name: Normalize filename
+        shell: bash
+        run: |
+          set -euo pipefail
+          SLUG="${{ steps.slug.outputs.slug }}"
+          TARGET_DIR="artifacts/macos"
+          # Remove qualquer arquivo .dmg antigo com o mesmo nome
+          find "$TARGET_DIR" -type f -iname "${SLUG}.dmg" -delete 2>/dev/null || true
+          # Renomeia o primeiro .dmg encontrado
+          find "$TARGET_DIR" -type f -iname "*.dmg" | head -1 | while read -r file; do
+            dir=$(dirname "$file")
+            base=$(basename "$file")
+            newname="${SLUG}.dmg"
+            if [ "$base" != "$newname" ]; then
+              mv "$file" "$dir/$newname"
+            else
+              echo "File already named correctly: $file"
+            fi
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.slug.outputs.slug }}-macos
+          path: artifacts/macos/${{ steps.slug.outputs.slug }}.dmg
           if-no-files-found: error

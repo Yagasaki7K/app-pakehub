@@ -90,6 +90,21 @@ End users can download generated installers from the SPA catalog or from GitHub 
 sudo apt install ./application.deb
 ```
 
+### macOS
+
+1. Download the application `.dmg` file.
+2. Open the `.dmg` file.
+3. Drag the application icon to the `Applications` folder.
+4. Launch the app from `Applications` (you may need to right-click and select "Open" the first time to bypass Gatekeeper).
+
+> [!IMPORTANT]
+> **Security Notice:** The generated installers are not officially signed by Microsoft or Apple. As a result, your system may display a security warning or antivirus alert when you try to run them. This happens **solely** because of the lack of digital certification — **not** because the software is malicious. All packages are built directly from the official application URL provided in `apps.json`, using [Pake](https://github.com/tw93/Pake), a widely used open-source tool. To install, you may need to:
+>
+> - On Windows: click **"More info"** and then **"Run anyway"**.
+> - On macOS: right-click the application and select **"Open"**.
+>
+> Only download files from trusted sources (this official repository) to ensure integrity.
+
 ## Local Development
 
 Install dependencies:
@@ -181,34 +196,66 @@ Contributions are welcome. Keep changes focused, use English comments, and prese
 - Do not add URL-related or application-name variables to `.env` or workflow-level application variables.
 - Do not create a generic application build workflow.
 
+Aqui estão as alterações solicitadas para o README.md, incluindo as instruções de instalação para macOS, um aviso sobre certificação e a atualização da seção "Creating New Applications" para refletir a nova arquitetura baseada em `apps.json`.
+
+---
+
 ## Creating New Applications
 
-To request or add a new application:
+This repository uses a **single-source-of-truth** approach. To add or update an application, you **do not** create a new workflow file. Instead, you edit the `apps.json` file, and the [orchestrator](.github/workflows/orchestrator.yaml) will automatically build all apps listed there.
+
+### How to add a new application
 
 1. Fork the repository.
 2. Create a branch for your change.
 3. Verify the public URL for the application.
-4. Create a workflow named `build-application-name.yaml`.
-5. Use the same structure as the existing application workflows.
-6. Install Pake CLI with `npm install --global pake-cli` in the workflow.
-7. Add metadata to `public/applications.json`.
-8. Run `npm test` locally.
-9. Open a Pull Request.
+4. Open `apps.json` and add a new entry with the following format:
+   ```json
+   {
+     "name": "Application Name",
+     "url": "https://example.com"
+   }
+   ```
+5. Commit and push your branch.
+6. Open a Pull Request.
 
-Required workflow naming examples:
+### How the build system works
 
-```text
-build-discord.yaml
-build-chatgpt.yaml
-build-spotify.yaml
+- The [`orchestrator.yaml`](.github/workflows/orchestrator.yaml) workflow is triggered on pushes to `apps.json` or manually via `workflow_dispatch`.
+- It reads `apps.json`, generates a dynamic matrix, and triggers the reusable [`build-app.yaml`](.github/workflows/build-app.yaml) for each application.
+- The `build-app.yaml` workflow builds installers for:
+  - **Windows** (`.msi`)
+  - **Linux** (`.deb`)
+  - **macOS** (`.dmg`)
+- All artifacts are collected, normalized (slug based on the application name), and committed to the `projects/` directory.
+
+### Important notes
+
+- **No manual workflow creation** – you never need to create `build-*.yaml` files.
+- **No `slug` field in `apps.json`** – the slug is generated automatically from the `name` field.
+- **No extra configuration** – the system handles everything from a single JSON file.
+- The `projects/` directory is automatically updated with the latest builds on every successful orchestration run.
+
+### Example `apps.json`
+
+```json
+[
+  {
+    "name": "ChatGPT",
+    "url": "https://chatgpt.com"
+  },
+  {
+    "name": "Twitter / X",
+    "url": "https://x.com"
+  },
+  {
+    "name": "Disney+",
+    "url": "https://disneyplus.com"
+  }
+]
 ```
 
-Required workflow structure:
-
-- `build-windows` job for `.msi` output.
-- `build-linux` job for `.deb` output.
-- `publish` job that validates, commits, and releases outputs.
-- No `APP_NAME`, `APP_URL`, `PNPM_HOME`, or `pnpm install -g` usage.
+> The application name is used to generate the slug (e.g., `"Twitter / X"` becomes `twitter-x`). The slug is used for artifact filenames and directory names.
 
 ## Pull Request Guidelines
 
