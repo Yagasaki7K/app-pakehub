@@ -1,5 +1,5 @@
 <p align="center">
-    <img src=/hub.png width=138/>
+    <img src=/hub.png width=150/>
 </p>
 <h1 align="center">Pake Application Hub</h1>
 <p align="center"><strong>Turn any webpage into a desktop app with Github Actions via Pake, supports Windows and Linux</strong></p>

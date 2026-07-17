@@ -54,10 +54,13 @@ jobs:
           set -euo pipefail
           TIMESTAMP=${{ steps.ts.outputs.timestamp }}
           WORKFLOW="build-app.yaml"
+          TOTAL_RUNS=0
+          COMPLETED_RUNS=0
 
           echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP)..."
 
           for i in {1..120}; do
+            # List all runs for the workflow created after the timestamp
             RUNS=$(gh run list --workflow "$WORKFLOW" --json databaseId,status,createdAt --limit 100 | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
 
             if [ -z "$RUNS" ]; then
@@ -66,7 +69,13 @@ jobs:
               continue
             fi
 
+            # Count total runs (including in_progress, queued, completed, etc.)
+            TOTAL_RUNS=$(echo "$RUNS" | jq -r 'length')
+            # Count completed runs (success or skipped)
+            COMPLETED_RUNS=$(echo "$RUNS" | jq -r 'select(.status == "completed" or .status == "skipped") | length')
+            # Count failed or cancelled
             FAILED=$(echo "$RUNS" | jq -r 'select(.status == "failure" or .status == "cancelled")')
+
             if [ -n "$FAILED" ]; then
               echo "❌ A build failed or was cancelled. Cancelling all remaining builds..."
               TO_CANCEL=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued") | .databaseId')
@@ -77,13 +86,14 @@ jobs:
               exit 1
             fi
 
+            # Check if all runs are completed
             PENDING=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued")')
             if [ -z "$PENDING" ]; then
-              echo "✅ All builds finished successfully."
+              echo "✅ All builds finished successfully. ($COMPLETED_RUNS/$TOTAL_RUNS completed)"
               break
             fi
 
-            echo "🔄 Still waiting for builds to finish..."
+            echo "🔄 Still waiting for builds to finish... ($COMPLETED_RUNS/$TOTAL_RUNS completed)"
             sleep 10
           done
         env:
@@ -171,10 +181,12 @@ jobs:
       - name: Check for changes in projects/, README.md, projects.md
         id: changes
         run: |
-          if git diff --quiet -- projects/ README.md projects.md 2>/dev/null; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
+          set -euo pipefail
+          # Verifica se há alterações (incluindo arquivos novos/não rastreados)
+          if git status --porcelain -- projects/ README.md projects.md 2>/dev/null | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Commit changes
