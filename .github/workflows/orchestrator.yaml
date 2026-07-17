@@ -1,4 +1,4 @@
-name: Build All Apps
+name: Orchestrator - Build All Apps
 
 on:
   push:
@@ -101,8 +101,8 @@ jobs:
       - name: Commit changes
         if: steps.changes.outputs.changed == 'true'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "Anderson Marlon"
+          git config user.email "anderson18.marlon@gmail.com"
           git add projects/
           git commit -m "Update builds via orchestrator [skip ci]"
           git push
