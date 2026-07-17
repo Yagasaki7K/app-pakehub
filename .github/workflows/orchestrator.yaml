@@ -48,9 +48,17 @@ jobs:
             name=$(echo "$app" | jq -r '.name')
             url=$(echo "$app" | jq -r '.url')
             echo "🚀 Triggering build for: $name"
-            # Run and capture the run ID
-            ID=$(gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url" --json id --jq '.id')
-            RUN_IDS="$RUN_IDS $ID"
+            gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
+            # Aguarda o run ser criado
+            sleep 2
+            # Obtém o ID do run mais recente para este workflow e branch
+            ID=$(gh run list --workflow build-app.yaml --branch "${{ github.ref_name }}" --limit 1 --json databaseId --jq '.[0].databaseId')
+            if [ -n "$ID" ]; then
+              RUN_IDS="$RUN_IDS $ID"
+              echo "✅ Run started with ID: $ID"
+            else
+              echo "⚠️ Could not retrieve run ID for $name"
+            fi
           done < <(jq -c '.apps[]' apps.json)
           echo "run_ids=$RUN_IDS" >> "$GITHUB_OUTPUT"
         env:
@@ -189,8 +197,8 @@ jobs:
       - name: Commit changes
         if: steps.changes.outputs.changed == 'true'
         run: |
-          git config user.name "Anderson Marlon"
-          git config user.email "anderson18.marlon@gmail.com"
+          git config.user.name "Anderson Marlon"
+          git config.user.email "anderson18.marlon@gmail.com"
           git add projects/ README.md projects.md
           git commit -m "Update builds and app list via orchestrator [skip ci]"
           git push
