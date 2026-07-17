@@ -84,7 +84,14 @@ jobs:
           set -euo pipefail
           SLUG="${{ steps.slug.outputs.slug }}"
           find artifacts/windows -type f -iname "*.msi" | while read -r file; do
-            mv "$file" "artifacts/windows/${SLUG}.msi"
+            dir=$(dirname "$file")
+            base=$(basename "$file")
+            newname="${SLUG}.msi"
+            if [ "$base" != "$newname" ]; then
+              mv "$file" "$dir/$newname"
+            else
+              echo "File already named correctly: $file"
+            fi
           done
 
       - name: Upload artifact
@@ -161,7 +168,14 @@ jobs:
           set -euo pipefail
           SLUG="${{ steps.slug.outputs.slug }}"
           find artifacts/linux -type f -iname "*.deb" | while read -r file; do
-            mv "$file" "artifacts/linux/${SLUG}.deb"
+            dir=$(dirname "$file")
+            base=$(basename "$file")
+            newname="${SLUG}.deb"
+            if [ "$base" != "$newname" ]; then
+              mv "$file" "$dir/$newname"
+            else
+              echo "File already named correctly: $file"
+            fi
           done
 
       - name: Upload artifact

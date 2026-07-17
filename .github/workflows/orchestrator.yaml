@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: write
-  actions: write  # necessário para disparar workflows via API
+  actions: write
 
 jobs:
   orchestrate:
@@ -26,15 +26,10 @@ jobs:
             echo "❌ apps.json not found"
             exit 1
           fi
-
           if ! jq -e '.[] | has("name") and has("url")' apps.json > /dev/null; then
             echo "❌ apps.json missing required fields (name, url)"
             exit 1
           fi
-
-          # Gera uma lista de apps em formato JSON para processar
-          jq -c '.[]' apps.json > apps_list.json
-          echo "apps_list=apps_list.json" >> "$GITHUB_OUTPUT"
 
       - name: Trigger builds for each app
         shell: bash
@@ -43,7 +38,7 @@ jobs:
             name=$(echo "$app" | jq -r '.name')
             url=$(echo "$app" | jq -r '.url')
             echo "🚀 Triggering build for: $name"
-            gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
+            gh workflow run build-app.yml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
           done < <(jq -c '.[]' apps.json)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -52,14 +47,13 @@ jobs:
         shell: bash
         run: |
           echo "⏳ Waiting for all triggered workflows to complete..."
-          # Aguarda até 10 minutos (600 segundos)
-          for i in {1..60}; do
-            pending=$(gh run list --workflow build-app.yaml --status in_progress --json status | jq 'length')
+          for i in {1..120}; do
+            pending=$(gh run list --workflow build-app.yml --status in_progress --json status | jq 'length')
             if [ "$pending" -eq 0 ]; then
               echo "✅ All builds finished."
               break
             fi
-            echo "🔄 $pending builds still running... ($i/60)"
+            echo "🔄 $pending builds still running... ($i/120)"
             sleep 10
           done
         env:
@@ -69,8 +63,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          # Baixa artefatos de todos os runs bem-sucedidos do workflow build-app.yaml
-          for run in $(gh run list --workflow build-app.yaml --status completed --json databaseId --jq '.[].databaseId'); do
+          for run in $(gh run list --workflow build-app.yml --status completed --json databaseId --jq '.[].databaseId'); do
             gh run download "$run" -D artifacts/
           done
         env:
@@ -81,8 +74,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p projects
-
-          # Procura por arquivos .msi e .deb nos artefatos baixados
           find artifacts -type f \( -iname "*.msi" -o -iname "*.deb" \) | while read -r file; do
             filename=$(basename "$file")
             echo "📦 Copying $filename to projects/"
