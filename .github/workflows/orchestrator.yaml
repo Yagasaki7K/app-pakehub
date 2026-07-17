@@ -52,7 +52,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Monitor builds – cancel all on any failure (job-level detection)
+      - name: Monitor builds – cancel ALL on ANY failure
         shell: bash
         run: |
           set -euo pipefail
@@ -64,7 +64,6 @@ jobs:
 
           echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP) – Total apps: $TOTAL_APPS"
 
-          # 30 minutos de timeout (180 iterações * 10s = 30min)
           for i in {1..180}; do
             # List runs for the current branch
             RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --json databaseId,status,createdAt --limit 200)
@@ -76,13 +75,11 @@ jobs:
               continue
             fi
 
-            # For each run, check its jobs
+            # Check if ANY run has a failed or cancelled job
             FAILED=false
             while IFS= read -r run_id; do
               if [ -z "$run_id" ]; then continue; fi
-              # Get jobs for this run
               JOBS_JSON=$(gh run view "$run_id" --json jobs --jq '.jobs')
-              # Check if any job has status "failure" or "cancelled"
               JOB_FAILED=$(echo "$JOBS_JSON" | jq -r '.[] | select(.status == "failure" or .status == "cancelled") | .name' | head -1)
               if [ -n "$JOB_FAILED" ]; then
                 echo "❌ Run $run_id has a failed/cancelled job: $JOB_FAILED"
@@ -92,14 +89,16 @@ jobs:
             done < <(echo "$RUNS" | jq -r '.databaseId')
 
             if [ "$FAILED" = true ]; then
-              echo "❌ A build job failed. Cancelling ALL remaining builds..."
-              # Cancel all runs that are still in progress or queued
-              TO_CANCEL=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued") | .databaseId')
+              echo "❌ A build job failed. Cancelling ALL builds in progress/queued for this branch..."
+              # Cancel ALL runs that are still in progress or queued (any workflow run on this branch)
+              TO_CANCEL=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --status in_progress,queued --json databaseId --jq '.[].databaseId')
               if [ -n "$TO_CANCEL" ]; then
                 for id in $TO_CANCEL; do
                   echo "🛑 Cancelling run $id"
                   gh run cancel "$id" || true
                 done
+              else
+                echo "No pending runs to cancel."
               fi
               exit 1
             fi
@@ -127,9 +126,8 @@ jobs:
           # After loop, check if all builds finished
           if [ "$COMPLETED" -lt "$TOTAL_APPS" ]; then
             echo "❌ Timeout: Not all builds completed within the allowed time ($COMPLETED/$TOTAL_APPS)."
-            # Cancel remaining runs
-            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --json databaseId,status --limit 200)
-            TO_CANCEL=$(echo "$RUNS_JSON" | jq -r '.[] | select(.status == "in_progress" or .status == "queued") | .databaseId')
+            # Cancel any remaining runs
+            TO_CANCEL=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --status in_progress,queued --json databaseId --jq '.[].databaseId')
             for id in $TO_CANCEL; do
               gh run cancel "$id" || true
             done
