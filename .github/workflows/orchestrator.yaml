@@ -31,6 +31,11 @@ jobs:
             exit 1
           fi
 
+      - name: Get current timestamp (for filtering runs)
+        id: ts
+        shell: bash
+        run: echo "timestamp=$(date -u +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Trigger builds for each app
         shell: bash
         run: |
@@ -43,17 +48,46 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Wait for builds to finish
+      - name: Monitor builds – cancel all on any failure
         shell: bash
         run: |
-          echo "⏳ Waiting for all triggered workflows to complete..."
+          set -euo pipefail
+          TIMESTAMP=${{ steps.ts.outputs.timestamp }}
+          WORKFLOW="build-app.yaml"
+
+          echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP)..."
+
           for i in {1..120}; do
-            pending=$(gh run list --workflow build-app.yaml --status in_progress --json status | jq 'length')
-            if [ "$pending" -eq 0 ]; then
-              echo "✅ All builds finished."
+            # List all runs for the workflow created after the timestamp
+            RUNS=$(gh run list --workflow "$WORKFLOW" --json databaseId,status,createdAt --limit 100 | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
+
+            if [ -z "$RUNS" ]; then
+              echo "⏳ No runs found yet (waiting for triggers)..."
+              sleep 10
+              continue
+            fi
+
+            # Check if any run has failed or been cancelled
+            FAILED=$(echo "$RUNS" | jq -r 'select(.status == "failure" or .status == "cancelled")')
+            if [ -n "$FAILED" ]; then
+              echo "❌ A build failed or was cancelled. Cancelling all remaining builds..."
+              # Get IDs of runs that are still in_progress or queued
+              TO_CANCEL=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued") | .databaseId')
+              for id in $TO_CANCEL; do
+                echo "🛑 Cancelling run $id"
+                gh run cancel "$id" || true
+              done
+              exit 1
+            fi
+
+            # Check if all runs are completed (success or skipped)
+            PENDING=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued")')
+            if [ -z "$PENDING" ]; then
+              echo "✅ All builds finished successfully."
               break
             fi
-            echo "🔄 $pending builds still running... ($i/120)"
+
+            echo "🔄 Still waiting for builds to finish..."
             sleep 10
           done
         env:
