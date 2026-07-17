@@ -36,24 +36,30 @@ jobs:
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
     steps:
-      - name: Generate slug
+      - name: Generate slug and sanitized name
         id: slug
         shell: bash
         run: |
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG=$(printf '%s' "${{ inputs.name }}" \
+          # Sanitize name for Pake (lowercase, alphanumeric, dashes only)
+          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
+          SLUG="${SANITIZED_NAME}-${HASH}"
+          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,11 +69,11 @@ jobs:
       - name: Verify environment
         shell: bash
         run: |
-          echo "🔍 Verifying environment..."
-          node --version
-          npm --version
-          rustc --version
-          cargo --version
+          echo "🔍 Verifying build environment..."
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "Rustc: $(rustc --version)"
+          echo "Cargo: $(cargo --version)"
 
       - name: Prepare artifact directory
         shell: bash
@@ -75,22 +81,19 @@ jobs:
 
       - name: Install Pake CLI (pinned version)
         shell: bash
-        run: npm install -g pake-cli@3.0.2
+        run: npm install -g pake-cli@3.1.0
 
       - name: Verify Pake
         shell: bash
         run: |
           pake --version
-          # Check Tauri dependencies alignment
-          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
-            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
-          fi
+          echo "✅ Pake installed successfully"
 
       - name: Build Windows installer
         shell: bash
         run: |
           pake "${{ inputs.url }}" \
-            --name "${{ inputs.name }}"
+            --name "${{ steps.slug.outputs.sanitized_name }}"
 
       - name: Collect and normalize Windows installer
         shell: bash
@@ -99,14 +102,12 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/windows"
 
-          # Find .msi file(s) – ensure we pick the right one
           MSI_FILES=$(find . -name "*.msi" -type f)
           if [ -z "$MSI_FILES" ]; then
             echo "❌ No .msi file found"
             exit 1
           fi
 
-          # Pick the one with the shortest path (likely root)
           MSI_FILE=$(echo "$MSI_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
           if [ -z "$MSI_FILE" ]; then
             echo "❌ Could not determine correct .msi file"
@@ -129,24 +130,29 @@ jobs:
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
     steps:
-      - name: Generate slug
+      - name: Generate slug and sanitized name
         id: slug
         shell: bash
         run: |
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG=$(printf '%s' "${{ inputs.name }}" \
+          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
+          SLUG="${SANITIZED_NAME}-${HASH}"
+          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -155,11 +161,11 @@ jobs:
 
       - name: Verify environment
         run: |
-          echo "🔍 Verifying environment..."
-          node --version
-          npm --version
-          rustc --version
-          cargo --version
+          echo "🔍 Verifying build environment..."
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "Rustc: $(rustc --version)"
+          echo "Cargo: $(cargo --version)"
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/linux
@@ -178,19 +184,17 @@ jobs:
             libcairo2-dev
 
       - name: Install Pake CLI (pinned version)
-        run: npm install -g pake-cli@3.0.2
+        run: npm install -g pake-cli@3.1.0
 
       - name: Verify Pake
         run: |
           pake --version
-          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
-            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
-          fi
+          echo "✅ Pake installed successfully"
 
       - name: Build Linux installer
         run: |
           pake "${{ inputs.url }}" \
-            --name "${{ inputs.name }}" \
+            --name "${{ steps.slug.outputs.sanitized_name }}" \
             --targets deb
 
       - name: Collect and normalize Linux installer
@@ -206,7 +210,6 @@ jobs:
             exit 1
           fi
 
-          # Pick the shortest path (likely root)
           DEB_FILE=$(echo "$DEB_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
           if [ -z "$DEB_FILE" ]; then
             echo "❌ Could not determine correct .deb file"
@@ -229,24 +232,29 @@ jobs:
     outputs:
       slug: ${{ steps.slug.outputs.slug }}
     steps:
-      - name: Generate slug
+      - name: Generate slug and sanitized name
         id: slug
         shell: bash
         run: |
-          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
-          SLUG=$(printf '%s' "${{ inputs.name }}" \
+          SANITIZED_NAME=$(echo "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
+          SLUG="${SANITIZED_NAME}-${HASH}"
+          echo "sanitized_name=$SANITIZED_NAME" >> "$GITHUB_OUTPUT"
+          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "✅ Sanitized name: $SANITIZED_NAME -> slug: $SLUG"
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -255,29 +263,27 @@ jobs:
 
       - name: Verify environment
         run: |
-          echo "🔍 Verifying environment..."
-          node --version
-          npm --version
-          rustc --version
-          cargo --version
+          echo "🔍 Verifying build environment..."
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "Rustc: $(rustc --version)"
+          echo "Cargo: $(cargo --version)"
 
       - name: Prepare artifact directory
         run: mkdir -p artifacts/macos
 
       - name: Install Pake CLI (pinned version)
-        run: npm install -g pake-cli@3.0.2
+        run: npm install -g pake-cli@3.1.0
 
       - name: Verify Pake
         run: |
           pake --version
-          if grep -q '"@tauri-apps/api": "1.6.0"' /opt/hostedtoolcache/node/*/lib/node_modules/pake-cli/package.json; then
-            echo "⚠️ Warning: @tauri-apps/api 1.6.0 detected – may cause incompatibility"
-          fi
+          echo "✅ Pake installed successfully"
 
       - name: Build macOS app
         run: |
           pake "${{ inputs.url }}" \
-            --name "${{ inputs.name }}"
+            --name "${{ steps.slug.outputs.sanitized_name }}"
 
       - name: Collect and normalize macOS DMG
         shell: bash
@@ -292,7 +298,6 @@ jobs:
             exit 1
           fi
 
-          # Pick the shortest path (likely root)
           DMG_FILE=$(echo "$DMG_FILES" | while read -r f; do echo "${#f} $f"; done | sort -n | head -1 | cut -d' ' -f2-)
           if [ -z "$DMG_FILE" ]; then
             echo "❌ Could not determine correct .dmg file"

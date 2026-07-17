@@ -39,10 +39,10 @@ jobs:
             exit 1
           fi
 
-          # Build matrix JSON with proper escaping
+          # Build matrix JSON
           MATRIX=$(jq -c '{ include: .apps }' apps.json)
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
-          echo "✅ Matrix generated successfully"
+          echo "✅ Matrix generated with $(echo "$MATRIX" | jq '.include | length') apps"
 
   build:
     name: Build ${{ matrix.name }}
