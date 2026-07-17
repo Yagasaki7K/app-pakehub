@@ -22,7 +22,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Validate and read apps.json
+      - name: Validate apps.json (new format with .apps)
         id: read
         shell: bash
         run: |
@@ -30,119 +30,95 @@ jobs:
             echo "❌ apps.json not found"
             exit 1
           fi
-          if ! jq -e '.[] | has("name") and has("url")' apps.json > /dev/null; then
-            echo "❌ apps.json missing required fields (name, url)"
+          if ! jq -e '.apps | length > 0' apps.json > /dev/null; then
+            echo "❌ apps.json must contain an .apps array"
+            exit 1
+          fi
+          if ! jq -e '.apps | all(has("name") and has("url"))' apps.json > /dev/null; then
+            echo "❌ Each app must have 'name' and 'url'"
             exit 1
           fi
 
-      - name: Get current timestamp (for filtering runs)
-        id: ts
-        shell: bash
-        run: echo "timestamp=$(date -u +%s)" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger builds for each app
+      - name: Trigger builds and store run IDs
+        id: trigger
         shell: bash
         run: |
+          RUN_IDS=""
           while IFS= read -r app; do
             name=$(echo "$app" | jq -r '.name')
             url=$(echo "$app" | jq -r '.url')
             echo "🚀 Triggering build for: $name"
-            gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url"
-          done < <(jq -c '.[]' apps.json)
+            # Run and capture the run ID
+            ID=$(gh workflow run build-app.yaml --ref "${{ github.ref }}" -f name="$name" -f url="$url" --json id --jq '.id')
+            RUN_IDS="$RUN_IDS $ID"
+          done < <(jq -c '.apps[]' apps.json)
+          echo "run_ids=$RUN_IDS" >> "$GITHUB_OUTPUT"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Monitor builds – cancel ALL on ANY failure
+      - name: Monitor builds and cancel on failure
         shell: bash
         run: |
           set -euo pipefail
-          TIMESTAMP=${{ steps.ts.outputs.timestamp }}
-          WORKFLOW="build-app.yaml"
-          BRANCH="${{ github.ref_name }}"
-          TOTAL_APPS=$(jq '. | length' apps.json)
+          RUN_IDS="${{ steps.trigger.outputs.run_ids }}"
+          if [ -z "$RUN_IDS" ]; then
+            echo "No runs triggered, exiting"
+            exit 0
+          fi
+          echo "⏳ Monitoring runs: $RUN_IDS"
+          TOTAL=$(echo "$RUN_IDS" | wc -w)
           COMPLETED=0
 
-          echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP) – Total apps: $TOTAL_APPS"
-
           for i in {1..180}; do
-            # List runs for the current branch
-            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --json databaseId,status,createdAt --limit 200)
-            RUNS=$(echo "$RUNS_JSON" | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
-
-            if [ -z "$RUNS" ]; then
-              echo "⏳ No runs found yet (waiting for triggers)..."
-              sleep 10
-              continue
-            fi
-
-            # Check if ANY run has a failed or cancelled job
             FAILED=false
-            while IFS= read -r run_id; do
-              if [ -z "$run_id" ]; then continue; fi
-              JOBS_JSON=$(gh run view "$run_id" --json jobs --jq '.jobs')
-              JOB_FAILED=$(echo "$JOBS_JSON" | jq -r '.[] | select(.status == "failure" or .status == "cancelled") | .name' | head -1)
-              if [ -n "$JOB_FAILED" ]; then
-                echo "❌ Run $run_id has a failed/cancelled job: $JOB_FAILED"
-                FAILED=true
-                break
+            for id in $RUN_IDS; do
+              # Get run status and conclusion
+              STATUS=$(gh run view "$id" --json status --jq '.status')
+              CONCLUSION=$(gh run view "$id" --json conclusion --jq '.conclusion' 2>/dev/null || echo "")
+              if [ "$STATUS" == "completed" ]; then
+                ((COMPLETED++)) || true
+                if [ "$CONCLUSION" != "success" ] && [ "$CONCLUSION" != "skipped" ]; then
+                  echo "❌ Run $id failed with conclusion: $CONCLUSION"
+                  FAILED=true
+                  break
+                fi
               fi
-            done < <(echo "$RUNS" | jq -r '.databaseId')
+            done
 
             if [ "$FAILED" = true ]; then
-              echo "❌ A build job failed. Cancelling ALL builds in progress/queued for this branch..."
-              # Cancel ALL runs that are still in progress or queued (any workflow run on this branch)
-              TO_CANCEL=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --status in_progress,queued --json databaseId --jq '.[].databaseId')
-              if [ -n "$TO_CANCEL" ]; then
-                for id in $TO_CANCEL; do
-                  echo "🛑 Cancelling run $id"
-                  gh run cancel "$id" || true
-                done
-              else
-                echo "No pending runs to cancel."
-              fi
+              echo "❌ A build failed. Cancelling ALL remaining runs..."
+              for id in $RUN_IDS; do
+                gh run cancel "$id" 2>/dev/null || true
+              done
               exit 1
             fi
 
-            # Count completed runs (success or skipped)
-            COMPLETED=$(echo "$RUNS" | jq -r 'select(.status == "completed" or .status == "skipped") | length')
-            PENDING=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued")')
-
-            echo "🔄 Still waiting for builds to finish... ($COMPLETED/$TOTAL_APPS completed)"
-
-            if [ -z "$PENDING" ]; then
-              # All runs completed – check if any run has conclusion != success
-              FAILED_RUN=$(echo "$RUNS" | jq -r 'select(.status == "completed" and .conclusion != "success") | .databaseId' | head -1)
-              if [ -n "$FAILED_RUN" ]; then
-                echo "❌ Run $FAILED_RUN finished with non-success conclusion. Failing."
-                exit 1
-              fi
-              echo "✅ All builds finished successfully. ($COMPLETED/$TOTAL_APPS completed)"
+            if [ "$COMPLETED" -eq "$TOTAL" ]; then
+              echo "✅ All builds finished successfully."
               break
             fi
 
+            echo "🔄 Still waiting... ($COMPLETED/$TOTAL completed)"
             sleep 10
           done
 
-          # After loop, check if all builds finished
-          if [ "$COMPLETED" -lt "$TOTAL_APPS" ]; then
-            echo "❌ Timeout: Not all builds completed within the allowed time ($COMPLETED/$TOTAL_APPS)."
-            # Cancel any remaining runs
-            TO_CANCEL=$(gh run list --workflow "$WORKFLOW" --branch "$BRANCH" --status in_progress,queued --json databaseId --jq '.[].databaseId')
-            for id in $TO_CANCEL; do
-              gh run cancel "$id" || true
+          # Timeout check
+          if [ "$COMPLETED" -lt "$TOTAL" ]; then
+            echo "❌ Timeout: Not all builds completed ($COMPLETED/$TOTAL)"
+            for id in $RUN_IDS; do
+              gh run cancel "$id" 2>/dev/null || true
             done
             exit 1
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download all artifacts
+      - name: Download artifacts from current runs only
         shell: bash
         run: |
           mkdir -p artifacts
-          BRANCH="${{ github.ref_name }}"
-          for run in $(gh run list --workflow build-app.yaml --branch "$BRANCH" --status completed --json databaseId --jq '.[].databaseId'); do
-            gh run download "$run" -D artifacts/
+          for id in ${{ steps.trigger.outputs.run_ids }}; do
+            gh run download "$id" -D artifacts/
           done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -171,11 +147,13 @@ jobs:
             for file in projects/*.$ext; do
               if [ -f "$file" ]; then
                 slug=$(basename "$file" .$ext)
-                name=$(jq -r ".[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$slug\") | .name" apps.json 2>/dev/null || echo "$slug")
+                # Look up name from apps.json
+                name=$(jq -r ".apps[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$slug\") | .name" apps.json 2>/dev/null || echo "")
                 if [ -z "$name" ] || [ "$name" = "null" ]; then
                   name=$(echo "$slug" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
                 fi
-                echo "- [$name ($os_name)](https://github.com/Yagasaki7K/app-pakebuilder/raw/refs/heads/main/projects/$slug.$ext)"
+                REPO="${{ github.repository }}"
+                echo "- [$name ($os_name)](https://github.com/$REPO/raw/refs/heads/main/projects/$slug.$ext)"
               fi
             done
           }
@@ -199,7 +177,7 @@ jobs:
             echo "⚠️ projects.md missing markers. Skipping."
           fi
 
-      - name: Check for changes
+      - name: Check for changes and commit
         id: changes
         run: |
           if git status --porcelain -- projects/ README.md projects.md 2>/dev/null | grep -q .; then

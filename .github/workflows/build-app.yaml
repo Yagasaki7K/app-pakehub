@@ -40,13 +40,15 @@ jobs:
         id: slug
         shell: bash
         run: |
+          # Add short hash to avoid duplicates
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
           SLUG=$(printf '%s' "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -81,7 +83,6 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/windows"
 
-          # Find the .msi file (anywhere)
           MSI_FILE=$(find . -name "*.msi" -type f | head -1)
           if [ -z "$MSI_FILE" ]; then
             echo "❌ No .msi file found"
@@ -108,13 +109,14 @@ jobs:
         id: slug
         shell: bash
         run: |
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
           SLUG=$(printf '%s' "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -159,7 +161,6 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/linux"
 
-          # Find the .deb file (anywhere, including subdirs)
           DEB_FILE=$(find . -name "*.deb" -type f | head -1)
           if [ -z "$DEB_FILE" ]; then
             echo "❌ No .deb file found"
@@ -186,13 +187,14 @@ jobs:
         id: slug
         shell: bash
         run: |
+          HASH=$(echo "${{ inputs.name }}" | sha256sum | cut -c1-4)
           SLUG=$(printf '%s' "${{ inputs.name }}" \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
             | sed 's/-\{2,\}/-/g' \
             | sed 's/^-//' \
             | sed 's/-$//')
-          echo "slug=$SLUG" >> "$GITHUB_OUTPUT"
+          echo "slug=${SLUG}-${HASH}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -223,7 +225,6 @@ jobs:
           SLUG="${{ steps.slug.outputs.slug }}"
           TARGET_DIR="artifacts/macos"
 
-          # Pake no macOS gera .dmg diretamente
           DMG_FILE=$(find . -name "*.dmg" -type f | head -1)
           if [ -z "$DMG_FILE" ]; then
             echo "❌ No .dmg file found"
