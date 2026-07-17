@@ -20,9 +20,6 @@ concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  PAKE_VERSION: 3.14.0  # Centralized Pake version - update here only
-
 jobs:
   validate:
     name: Validate apps.json
@@ -125,8 +122,7 @@ jobs:
 
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
-        with:
-          pake-version: ${{ env.PAKE_VERSION }}
+        # No need to pass pake-version; uses default from action
 
       - name: Install Linux dependencies
         if: matrix.target == 'linux'
@@ -140,8 +136,8 @@ jobs:
           SMOKE_DIR=$(mktemp -d)
           cd "$SMOKE_DIR"
 
-          # Use npx --yes to avoid interactive confirmation
-          npx --yes pake-cli@${{ env.PAKE_VERSION }} "$TEST_URL" --name "$TEST_NAME"
+          # Use npx --yes with fixed version
+          npx --yes pake-cli@3.14.0 "$TEST_URL" --name "$TEST_NAME"
 
           ARTIFACT=$(find . -name "*.${{ matrix.ext }}" | head -1)
           if [ -z "$ARTIFACT" ]; then
@@ -196,7 +192,7 @@ jobs:
       name: ${{ matrix.name }}
       url: ${{ matrix.url }}
       slug: ${{ matrix.slug }}
-      pake-version: ${{ env.PAKE_VERSION }}
+      # pake-version not passed; uses default from reusable workflow
 
   release:
     name: Create GitHub Release
