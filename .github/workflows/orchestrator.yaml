@@ -122,7 +122,6 @@ jobs:
 
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
-        # pake-version usa o default da action
 
       - name: Install Linux dependencies
         if: matrix.target == 'linux'
@@ -151,7 +150,7 @@ jobs:
             exit 1
           fi
 
-          # Validate file format
+          # Validate file format per platform
           case "${{ matrix.target }}" in
             windows)
               if ! file "$ARTIFACT" | grep -qi "MSI\|Composite Document"; then
@@ -166,8 +165,10 @@ jobs:
               fi
               ;;
             macos)
-              if ! file "$ARTIFACT" | grep -qi "Apple Disk Image\|bzip2 compressed data"; then
-                echo "❌ File does not appear to be a valid DMG disk image"
+              # Use hdiutil verify (official Apple tool) for DMG validation
+              if ! hdiutil verify "$ARTIFACT" >/dev/null 2>&1; then
+                echo "❌ DMG verification failed for $ARTIFACT"
+                hdiutil verify "$ARTIFACT" 2>&1 || true
                 exit 1
               fi
               ;;
@@ -245,6 +246,7 @@ jobs:
                   echo "❌ Artifact $slug on $platform is empty"
                   MISSING=$((MISSING + 1))
                 else
+                  # Validate format per platform
                   case $platform in
                     windows)
                       if ! file "$FILE" | grep -qi "MSI\|Composite Document"; then
@@ -263,8 +265,10 @@ jobs:
                       fi
                       ;;
                     macos)
-                      if ! file "$FILE" | grep -qi "Apple Disk Image\|bzip2 compressed data"; then
+                      # Use hdiutil verify for DMG validation
+                      if ! hdiutil verify "$FILE" >/dev/null 2>&1; then
                         echo "❌ Invalid DMG format for $slug on $platform"
+                        hdiutil verify "$FILE" 2>&1 || true
                         MISSING=$((MISSING + 1))
                       else
                         echo "✅ Found $slug on $platform ($SIZE bytes)"
