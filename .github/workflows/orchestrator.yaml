@@ -12,6 +12,13 @@ on:
         description: 'Mark release as prerelease?'
         type: boolean
         default: true
+      max_parallel:
+        description: 'Maximum parallel builds'
+        required: false
+        type: number
+        default: 4
+  schedule:
+    - cron: '0 3 * * 0'
 
 permissions:
   contents: read
@@ -20,6 +27,9 @@ concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  MAX_PARALLEL: ${{ inputs.max_parallel || vars.MAX_PARALLEL || 4 }}
+
 jobs:
   validate:
     name: Validate apps.json
@@ -27,23 +37,28 @@ jobs:
     permissions:
       contents: read
     outputs:
-      batches: ${{ steps.matrix.outputs.batches }}
-      app_count: ${{ steps.matrix.outputs.app_count }}
+      apps: ${{ steps.validate.outputs.apps }}
+      app_count: ${{ steps.validate.outputs.app_count }}
+      smoke: ${{ steps.validate.outputs.smoke }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
 
-      - name: Validate and build batches
-        id: matrix
+      - name: Validate and build app list
+        id: validate
         shell: bash
         run: |
+          set -euo pipefail
+
           if [ ! -f apps.json ]; then
             echo "❌ apps.json not found"
             exit 1
           fi
 
           python3 << 'EOF'
-          import json, re, sys, os, math
+          import json, re, sys, os
           from urllib.parse import urlparse
 
           with open('apps.json') as f:
@@ -54,7 +69,6 @@ jobs:
               print("❌ apps.json must contain a non-empty .apps array")
               sys.exit(1)
 
-          # Validate each app
           for idx, app in enumerate(apps):
               if 'name' not in app or 'url' not in app:
                   print(f"❌ App at index {idx} missing 'name' or 'url'")
@@ -67,185 +81,76 @@ jobs:
                   print(f"❌ Invalid URL: {app['url']}")
                   sys.exit(1)
 
-          # Generate slugs internally (not stored in apps.json)
           def slugify(name):
               try:
                   import unicodedata
                   name = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
               except:
                   pass
-              return re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', name.lower())).strip('-') or 'app'
+              slug = re.sub(r'-+', '-', re.sub(r'[^a-z0-9]', '-', name.lower())).strip('-')
+              return slug if slug else 'app'
 
           slugs = []
+          app_list = []
+          smoke = None
           for app in apps:
               slug = slugify(app['name'])
               if slug in slugs:
                   print(f"❌ Duplicate slug '{slug}' for app '{app['name']}'")
                   sys.exit(1)
               slugs.append(slug)
-
-          apps_per_batch = 20
-          total_apps = len(apps)
-          num_batches = math.ceil(total_apps / apps_per_batch)
-
-          batches = []
-          for i in range(num_batches):
-              start = i * apps_per_batch
-              end = min((i + 1) * apps_per_batch, total_apps)
-              batch_apps = apps[start:end]
-              batch_slugs = slugs[start:end]
-              batch = []
-              for app, slug in zip(batch_apps, batch_slugs):
-                  batch.append({
-                      'name': app['name'],
-                      'url': app['url'],
-                      'slug': slug
-                  })
-              batches.append({'batch_id': i + 1, 'apps': batch})
+              if app['name'] == '__smoke__':
+                  smoke = {'name': app['name'], 'url': app['url'], 'slug': slug}
+              else:
+                  app_list.append({'name': app['name'], 'url': app['url'], 'slug': slug})
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"batches={json.dumps(batches)}\n")
-              f.write(f"app_count={total_apps}\n")
+              f.write(f"apps={json.dumps(app_list)}\n")
+              f.write(f"app_count={len(app_list)}\n")
+              f.write(f"smoke={json.dumps(smoke) if smoke else 'null'}\n")
 
-          print(f"✅ Generated {len(batches)} batches for {total_apps} apps")
+          print(f"✅ Validated {len(app_list)} apps" + (f" (smoke: {smoke['name']})" if smoke else ""))
           EOF
 
-  build:
-    name: Batch ${{ matrix.batch_id }}
+  smoke-test:
+    name: Smoke test
     needs: validate
+    if: needs.validate.outputs.smoke != 'null'
+    uses: ./.github/workflows/build-app.yaml
+    with:
+      name: __smoke__
+      url: ${{ fromJson(needs.validate.outputs.smoke).url }}
+      slug: smoke
+      pake-version: 3.14.0
+      prerelease: true
+      is_smoke: true
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: Build ${{ matrix.app.name }}
+    needs: [validate, smoke-test]
     permissions:
       contents: read
     strategy:
       matrix:
-        batch: ${{ fromJson(needs.validate.outputs.batches) }}
+        app: ${{ fromJson(needs.validate.outputs.apps) }}
       fail-fast: false
-      max-parallel: 6
+      max-parallel: ${{ env.MAX_PARALLEL }}
     uses: ./.github/workflows/build-app.yaml
     with:
-      apps: ${{ toJson(matrix.batch.apps) }}
-      batch_id: ${{ matrix.batch.batch_id }}
+      name: ${{ matrix.app.name }}
+      url: ${{ matrix.app.url }}
+      slug: ${{ matrix.app.slug }}
       pake-version: 3.14.0
-
-  collect:
-    name: Collect artifacts
-    needs: [validate, build]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    if: always()
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: false
-
-      - name: Validate artifacts per application
-        shell: bash
-        run: |
-          set -euo pipefail
-          echo "🔍 Validating artifacts per app..."
-
-          BATCHES_JSON='${{ needs.validate.outputs.batches }}'
-          ALL_SLUGS=$(echo "$BATCHES_JSON" | jq -r '.[].apps[].slug')
-          echo "📋 Expected slugs: $ALL_SLUGS"
-
-          MISSING=0
-          for slug in $ALL_SLUGS; do
-            for platform in windows linux macos; do
-              case $platform in
-                windows) ext=msi ;;
-                linux) ext=deb ;;
-                macos) ext=dmg ;;
-              esac
-              FILE="artifacts/${slug}-${platform}/${slug}.${ext}"
-              if [ ! -f "$FILE" ]; then
-                echo "❌ Missing artifact for $slug on $platform"
-                MISSING=$((MISSING + 1))
-              else
-                SIZE=$(stat -c%s "$FILE" 2>/dev/null || stat -f%z "$FILE" 2>/dev/null || echo 0)
-                if [ "$SIZE" -eq 0 ]; then
-                  echo "❌ Artifact $slug on $platform is empty"
-                  MISSING=$((MISSING + 1))
-                else
-                  case $platform in
-                    windows)
-                      if ! file "$FILE" | grep -qi "MSI\|Composite Document"; then
-                        echo "❌ Invalid MSI format for $slug on $platform"
-                        MISSING=$((MISSING + 1))
-                      else
-                        echo "✅ Found $slug on $platform ($SIZE bytes)"
-                      fi
-                      ;;
-                    linux)
-                      if ! file "$FILE" | grep -qi "Debian binary package"; then
-                        echo "❌ Invalid DEB format for $slug on $platform"
-                        MISSING=$((MISSING + 1))
-                      else
-                        echo "✅ Found $slug on $platform ($SIZE bytes)"
-                      fi
-                      ;;
-                    macos)
-                      # Use hdiutil verify (does not mount, only checks integrity)
-                      if ! hdiutil verify "$FILE" >/dev/null 2>&1; then
-                        echo "❌ Invalid DMG format for $slug on $platform"
-                        MISSING=$((MISSING + 1))
-                      else
-                        echo "✅ Found $slug on $platform ($SIZE bytes)"
-                      fi
-                      ;;
-                  esac
-                fi
-              fi
-            done
-          done
-
-          if [ "$MISSING" -gt 0 ]; then
-            echo "❌ $MISSING artifacts missing, empty, or invalid"
-            exit 1
-          fi
-          echo "✅ All artifacts present and valid for all apps"
-
-      - name: Prepare release assets
-        shell: bash
-        run: |
-          mkdir -p release-assets
-          find artifacts -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) | while read -r file; do
-            cp "$file" release-assets/
-          done
-
-      - name: Generate SHA256 checksums
-        shell: bash
-        run: |
-          cd release-assets
-          sha256sum * > SHA256SUMS
-          cd -
-
-      - name: Verify checksums
-        shell: bash
-        run: |
-          cd release-assets
-          sha256sum -c SHA256SUMS
-          cd -
-
-      - name: Create GitHub Release
-        id: release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: "Build ${{ github.run_id }}"
-          tag_name: "build-${{ github.run_id }}"
-          generate_release_notes: true
-          files: release-assets/*
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease != false || true }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease != false || true }}
+      is_smoke: false
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   status-report:
     name: Build status report
-    needs: [validate, build, collect]
+    needs: [validate, smoke-test, build]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -254,20 +159,22 @@ jobs:
       - name: Generate status summary
         shell: bash
         run: |
-          echo "## 📊 Build Status" >> $GITHUB_STEP_SUMMARY
+          set -euo pipefail
+
+          echo "## 📊 Build Status Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
           VALIDATE_RESULT="${{ needs.validate.result }}"
+          SMOKE_RESULT="${{ needs.smoke-test.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
-          COLLECT_RESULT="${{ needs.collect.result }}"
 
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | $VALIDATE_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Smoke Test | $SMOKE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | $BUILD_RESULT |" >> $GITHUB_STEP_SUMMARY
-          echo "| Collect | $COLLECT_RESULT |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$BUILD_RESULT" == "success" ] && [ "$COLLECT_RESULT" == "success" ]; then
+          if [ "$SMOKE_RESULT" == "success" ] && [ "$BUILD_RESULT" == "success" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
             exit 0

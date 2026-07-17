@@ -1,0 +1,103 @@
+name: Publish Release
+description: Creates a GitHub Release with retry logic, reading assets from a file
+
+inputs:
+  slug:
+    description: Application slug
+    required: true
+  name:
+    description: Application name
+    required: true
+  version:
+    description: Version to release
+    required: true
+  assets_file:
+    description: Path to file containing list of asset paths (one per line)
+    required: true
+  prerelease:
+    description: Mark release as prerelease
+    required: false
+    default: true
+
+runs:
+  using: composite
+  steps:
+    - name: Create Release with retry
+      id: release
+      shell: bash
+      run: |
+        set -euo pipefail
+        SLUG="${{ inputs.slug }}"
+        NAME="${{ inputs.name }}"
+        VERSION="${{ inputs.version }}"
+        PRERELEASE="${{ inputs.prerelease }}"
+        MAX_ATTEMPTS=20
+        ATTEMPT=0
+        SUCCESS=false
+
+        ASSETS_FILE="${{ inputs.assets_file }}"
+        if [ ! -f "$ASSETS_FILE" ]; then
+          echo "❌ Assets list file not found: $ASSETS_FILE"
+          exit 1
+        fi
+
+        mapfile -t files < "$ASSETS_FILE"
+        if [ ${#files[@]} -eq 0 ]; then
+          echo "❌ No assets listed in $ASSETS_FILE"
+          exit 1
+        fi
+
+        for file in "${files[@]}"; do
+          if [ ! -f "$file" ]; then
+            echo "❌ Asset file not found: $file"
+            exit 1
+          fi
+        done
+
+        echo "📦 Starting release with version $VERSION"
+
+        git fetch --tags origin --force >/dev/null 2>&1
+
+        while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+          ATTEMPT=$((ATTEMPT + 1))
+          echo "🔄 Attempt $ATTEMPT with version $VERSION"
+
+          if gh release create "${SLUG}-${VERSION}" \
+            --title "$NAME v$VERSION" \
+            --notes "Release for $NAME v$VERSION" \
+            "${files[@]}" \
+            --prerelease="$PRERELEASE" \
+            --target "${{ github.sha }}" 2>error.log; then
+            SUCCESS=true
+            break
+          else
+            ERROR_MSG=$(cat error.log)
+            if echo "$ERROR_MSG" | grep -qiE "already exists|rate limit|network|timeout|TLS|502|503|504|connection refused|connection reset|i/o timeout|EOF|transport closed|context deadline|429|ECONNRESET|ETIMEDOUT|socket hang up|temporary failure|connection timed out"; then
+              if echo "$ERROR_MSG" | grep -qi "already exists"; then
+                LATEST_VERSION=$(scripts/next-version.sh "$SLUG")
+                if [ "$LATEST_VERSION" != "$VERSION" ]; then
+                  VERSION="$LATEST_VERSION"
+                  echo "🔄 Version updated to $VERSION due to conflict"
+                else
+                  IFS='.' read -r maj min pat <<< "$VERSION"
+                  NEW_PATCH=$((pat + 1))
+                  VERSION="${maj}.${min}.${NEW_PATCH}"
+                  echo "🔄 Version manually incremented to $VERSION"
+                fi
+              fi
+              DELAY=$((ATTEMPT * 2 + RANDOM % 3))
+              echo "⚠️ Transient error, retrying in ${DELAY}s..."
+              sleep "$DELAY"
+            else
+              echo "❌ Permanent error: $ERROR_MSG"
+              exit 1
+            fi
+          fi
+        done
+
+        if [ "$SUCCESS" != "true" ]; then
+          echo "❌ Failed to create release after $MAX_ATTEMPTS attempts"
+          exit 1
+        fi
+
+        echo "✅ Release created: $VERSION"

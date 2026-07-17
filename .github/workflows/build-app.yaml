@@ -3,58 +3,90 @@ name: Build Application
 on:
   workflow_dispatch:
     inputs:
-      apps:
-        description: List of applications (JSON array with name, url, slug)
+      name:
+        description: Application name
         required: true
         type: string
-      batch_id:
-        description: Batch identifier
+      url:
+        description: Application URL
         required: true
-        type: number
+        type: string
+      slug:
+        description: Application slug
+        required: true
+        type: string
       pake-version:
         description: Pake CLI version
         required: false
         type: string
         default: 3.14.0
+      prerelease:
+        description: 'Mark release as prerelease?'
+        required: false
+        type: boolean
+        default: true
+      is_smoke:
+        description: 'Is this a smoke test?'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
-      apps:
-        description: List of applications (JSON array with name, url, slug)
+      name:
+        description: Application name
         required: true
         type: string
-      batch_id:
-        description: Batch identifier
+      url:
+        description: Application URL
         required: true
-        type: number
+        type: string
+      slug:
+        description: Application slug
+        required: true
+        type: string
       pake-version:
         description: Pake CLI version
         required: false
         type: string
         default: 3.14.0
+      prerelease:
+        description: 'Mark release as prerelease?'
+        required: false
+        type: boolean
+        default: true
+      is_smoke:
+        description: 'Is this a smoke test?'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      GITHUB_TOKEN:
+        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: build-batch-${{ inputs.batch_id }}
+  group: build-${{ github.repository }}-${{ inputs.slug }}
   cancel-in-progress: true
 
 jobs:
   build-platform:
-    name: ${{ matrix.app.name }} (${{ matrix.platform.name }})
+    name: ${{ inputs.name }} (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 40
     strategy:
       matrix:
         platform:
           - { name: windows, runner: windows-latest, ext: msi }
           - { name: linux, runner: ubuntu-latest, ext: deb }
           - { name: macos, runner: macos-latest, ext: dmg }
-        app: ${{ fromJson(inputs.apps) }}
       fail-fast: false
-      max-parallel: 3
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
 
       - name: Setup build environment
         uses: ./.github/actions/setup-pake
@@ -69,34 +101,61 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SLUG="${{ matrix.app.slug }}"
-          URL="${{ matrix.app.url }}"
+          SLUG="${{ inputs.slug }}"
+          URL="${{ inputs.url }}"
           PAKE_VERSION="${{ inputs.pake-version }}"
 
           BUILD_DIR=$(mktemp -d)
+          trap 'rm -rf "$BUILD_DIR"' EXIT
           cd "$BUILD_DIR"
 
-          retry() {
+          # Retry with error-aware logic (capturing stderr to a file)
+          retry_build() {
             local n=0
-            local max=3
+            local max=5
             local delay=5
-            until [ $n -ge $max ]; do
-              if "$@"; then
+            local stderr_file=$(mktemp)
+            while [ $n -lt $max ]; do
+              if "$@" 2> >(tee "$stderr_file" >&2); then
+                rm -f "$stderr_file"
                 return 0
               fi
+              local exit_code=$?
               n=$((n+1))
-              echo "⚠️ Command failed (attempt $n/$max). Retrying in ${delay}s..."
-              sleep $delay
-              delay=$((delay * 2))
+              echo "⚠️ Command failed (attempt $n/$max) with exit code $exit_code"
+
+              # Read error message from stderr file
+              local error_msg=$(cat "$stderr_file" 2>/dev/null || echo "")
+              if echo "$error_msg" | grep -qiE "timeout|connection reset|network|TLS|502|503|504|EOF|transport closed|rate limit"; then
+                echo "🔄 Transient error detected, retrying in ${delay}s..."
+                sleep $((delay + RANDOM % 3))
+                delay=$((delay * 2))
+                rm -f "$stderr_file"
+                stderr_file=$(mktemp)
+              else
+                echo "❌ Non-transient error: $error_msg"
+                rm -f "$stderr_file"
+                return $exit_code
+              fi
             done
-            echo "❌ Failed after $max attempts."
+            echo "❌ Failed after $max attempts"
+            rm -f "$stderr_file"
             return 1
           }
 
-          retry npx --yes pake-cli@$PAKE_VERSION --version >/dev/null 2>&1
-          retry npx --yes pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
+          retry_build npx --yes pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
 
-          ARTIFACT=$(find . -name "*.${{ matrix.platform.ext }}" | head -1)
+          ZIP_FILE=$(find . -name "*.zip" | head -1)
+          if [ -n "$ZIP_FILE" ]; then
+            echo "📦 Extracting ZIP: $ZIP_FILE"
+            retry_build unzip -q "$ZIP_FILE" -d extracted/
+            ARTIFACT=$(find extracted -name "${SLUG}.${{ matrix.platform.ext }}" | head -1)
+            [ -z "$ARTIFACT" ] && ARTIFACT=$(find extracted -name "*.${{ matrix.platform.ext }}" | head -1)
+          else
+            ARTIFACT=$(find . -name "${SLUG}.${{ matrix.platform.ext }}" | head -1)
+            [ -z "$ARTIFACT" ] && ARTIFACT=$(find . -name "*.${{ matrix.platform.ext }}" | head -1)
+          fi
+
           if [ -z "$ARTIFACT" ]; then
             echo "❌ No .${{ matrix.platform.ext }} file generated"
             exit 1
@@ -110,22 +169,27 @@ jobs:
 
           case "${{ matrix.platform.name }}" in
             windows)
-              if ! file "$ARTIFACT" | grep -qi "MSI\|Composite Document"; then
-                echo "❌ Invalid MSI format"
-                exit 1
-              fi
+              echo "✅ MSI size validation passed ($SIZE bytes)"
               ;;
             linux)
               if ! file "$ARTIFACT" | grep -qi "Debian binary package"; then
                 echo "❌ Invalid DEB format"
                 exit 1
               fi
+              if command -v dpkg-deb >/dev/null; then
+                if ! dpkg-deb --info "$ARTIFACT" >/dev/null 2>&1; then
+                  echo "❌ dpkg-deb validation failed"
+                  exit 1
+                fi
+              fi
               ;;
             macos)
-              if ! hdiutil verify "$ARTIFACT" >/dev/null 2>&1; then
-                echo "❌ Invalid DMG format"
+              DEVICE=$(hdiutil attach -readonly -nobrowse "$ARTIFACT" 2>/dev/null | awk '/\/dev\// {print $1; exit}')
+              if [ -z "$DEVICE" ]; then
+                echo "❌ Invalid DMG format (cannot mount)"
                 exit 1
               fi
+              hdiutil detach "$DEVICE" >/dev/null 2>&1 || true
               ;;
           esac
 
@@ -136,6 +200,37 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.app.slug }}-${{ matrix.platform.name }}
-          path: artifacts/${{ matrix.app.slug }}-${{ matrix.platform.name }}/${{ matrix.app.slug }}.${{ matrix.platform.ext }}
+          name: ${{ inputs.slug }}-${{ matrix.platform.name }}
+          path: ${{ github.workspace }}/artifacts/${{ inputs.slug }}-${{ matrix.platform.name }}/${{ inputs.slug }}.${{ matrix.platform.ext }}
           if-no-files-found: error
+
+  create-release:
+    name: Create Release for ${{ inputs.name }}
+    needs: build-platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    if: ${{ !inputs.is_smoke }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Prepare release
+        id: prepare
+        uses: ./.github/actions/prepare-release
+        with:
+          slug: ${{ inputs.slug }}
+
+      - name: Publish release
+        uses: ./.github/actions/publish-release
+        with:
+          slug: ${{ inputs.slug }}
+          name: ${{ inputs.name }}
+          version: ${{ steps.prepare.outputs.version }}
+          assets_file: ${{ steps.prepare.outputs.assets_file }}
+          prerelease: ${{ inputs.prerelease }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

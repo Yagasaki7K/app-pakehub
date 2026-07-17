@@ -1,0 +1,75 @@
+name: Prepare Release
+description: Downloads artifacts, generates checksums, and calculates next version
+
+inputs:
+  slug:
+    description: Application slug
+    required: true
+
+outputs:
+  version:
+    description: Next version to release
+    value: ${{ steps.version.outputs.version }}
+  assets_file:
+    description: Path to file containing list of asset paths (one per line)
+    value: ${{ steps.assets.outputs.file }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ${{ github.workspace }}/artifacts
+        merge-multiple: false
+
+    - name: Prepare release assets
+      id: assets
+      shell: bash
+      run: |
+        set -euo pipefail
+        SLUG="${{ inputs.slug }}"
+        mkdir -p release-assets
+        ASSETS_LIST="${{ github.workspace }}/.assets_list_${SLUG}.txt"
+
+        # Clear the list file
+        > "$ASSETS_LIST"
+
+        for platform in windows linux macos; do
+          case $platform in
+            windows) ext=msi ;;
+            linux) ext=deb ;;
+            macos) ext=dmg ;;
+          esac
+          src="${{ github.workspace }}/artifacts/${SLUG}-${platform}/${SLUG}.${ext}"
+          if [ -f "$src" ]; then
+            cp "$src" release-assets/
+            echo "release-assets/${SLUG}.${ext}" >> "$ASSETS_LIST"
+          else
+            echo "❌ Missing artifact for $SLUG on $platform"
+            exit 1
+          fi
+        done
+
+        # Generate SHA256 checksums
+        cd release-assets
+        find . -maxdepth 1 -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) -exec sha256sum {} + > SHA256SUMS
+        if [ -s SHA256SUMS ]; then
+          sha256sum --check SHA256SUMS
+          echo "release-assets/SHA256SUMS" >> "$ASSETS_LIST"
+        else
+          echo "❌ No checksums generated"
+          exit 1
+        fi
+        cd -
+
+        echo "file=$ASSETS_LIST" >> "$GITHUB_OUTPUT"
+
+    - name: Calculate next version
+      id: version
+      shell: bash
+      run: |
+        set -euo pipefail
+        SLUG="${{ inputs.slug }}"
+        VERSION=$(scripts/next-version.sh "$SLUG")
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
