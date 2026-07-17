@@ -10,11 +10,44 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  trigger-all:
+  generate:
+    name: Generate workflows and docs from apps.json
     runs-on: ubuntu-latest
     permissions:
-      contents: write   # necessário para commitar em /projects
-      actions: write    # disparar workflows e baixar artifacts
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Run generator
+        run: go run ./scripts/generate/main.go
+
+      - name: Commit generated files
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows PROJECTS.md
+          [ -f README.md ] && git add README.md || true
+          if git diff --cached --quiet; then
+            echo "✅ Nothing to update"
+          else
+            git commit -m "chore: regenerate workflows and docs from apps.json [skip ci]"
+            git push
+          fi
+
+  trigger-all:
+    needs: generate
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      actions: write
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,7 +60,6 @@ jobs:
           TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           : > run_ids.txt
 
-          # gh já vem pré-instalado no runner e usa GH_TOKEN automaticamente
           gh workflow list --limit 100 --json id,name,path | \
             jq -r '.[] | select(.path != ".github/workflows/workflow.yaml") | "\(.id)\t\(.name)"' > workflows.txt
 
@@ -38,7 +70,6 @@ jobs:
             echo "▶️ Triggering: $WF_NAME ($WF_ID)"
             gh workflow run "$WF_ID" --ref "$BRANCH"
 
-            # aguarda o run aparecer na API e captura o ID dele
             RUN_ID=""
             for i in $(seq 1 12); do
               sleep 5
@@ -52,6 +83,7 @@ jobs:
               echo "❌ Could not find run for workflow $WF_NAME"
               exit 1
             fi
+
             echo "   → run id: $RUN_ID"
             echo "$RUN_ID" >> run_ids.txt
           done < workflows.txt
@@ -64,10 +96,10 @@ jobs:
           mkdir -p downloaded projects
           FAILED=0
 
-          # espera cada run terminar; só baixa artifacts dos que tiveram sucesso
           while read -r RUN_ID; do
             [ -z "${RUN_ID:-}" ] && continue
             echo "⏳ Waiting for run $RUN_ID..."
+
             if gh run watch "$RUN_ID" --interval 60 --exit-status >/dev/null 2>&1; then
               gh run download "$RUN_ID" --dir "downloaded/$RUN_ID" || true
             else
@@ -76,7 +108,6 @@ jobs:
             fi
           done < run_ids.txt
 
-          # normaliza: tudo minúsculo (Shopee.msi / The-Shopee.msi → shopee.msi / the-shopee.msi)
           echo "🔤 Normalizing and copying installers to projects/"
           find downloaded -type f \( -iname '*.msi' -o -iname '*.deb' \) -print0 | \
           while IFS= read -r -d '' f; do
@@ -92,11 +123,12 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "Anderson Marlon"
+          git config user.email "anderson18.marlon@gmail.com"
 
           if find projects -type f \( -iname '*.msi' -o -iname '*.deb' \) | grep -q .; then
             git add projects/
+
             if git diff --cached --quiet; then
               echo "✅ Nothing changed in projects/"
             else
