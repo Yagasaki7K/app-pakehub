@@ -60,8 +60,8 @@ jobs:
           echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP) – Total apps: $TOTAL_APPS"
 
           for i in {1..120}; do
-            # List all runs for the workflow created after the timestamp
-            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --json databaseId,status,createdAt --limit 100)
+            # List runs for the current ref only
+            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --ref "${{ github.ref }}" --json databaseId,status,createdAt --limit 200)
             RUNS=$(echo "$RUNS_JSON" | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
 
             if [ -z "$RUNS" ]; then
@@ -84,7 +84,6 @@ jobs:
 
             # Count completed runs (success or skipped)
             COMPLETED=$(echo "$RUNS" | jq -r 'select(.status == "completed" or .status == "skipped") | length')
-            # Count pending runs (in_progress or queued)
             PENDING=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued")')
 
             echo "🔄 Still waiting for builds to finish... ($COMPLETED/$TOTAL_APPS completed)"
@@ -109,7 +108,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          for run in $(gh run list --workflow build-app.yaml --status completed --json databaseId --jq '.[].databaseId'); do
+          for run in $(gh run list --workflow build-app.yaml --ref "${{ github.ref }}" --status completed --json databaseId --jq '.[].databaseId'); do
             gh run download "$run" -D artifacts/
           done
         env:
@@ -120,7 +119,6 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p projects
-          # Remove old files to ensure clean update
           rm -rf projects/* 2>/dev/null || true
           find artifacts -type f \( -iname "*.msi" -o -iname "*.deb" -o -iname "*.dmg" \) | while read -r file; do
             filename=$(basename "$file")
@@ -133,21 +131,14 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Função para gerar a lista de aplicativos
           generate_app_list() {
             local ext="$1"
             local os_name="$2"
-            local ext_upper
-            ext_upper=$(echo "$ext" | tr '[:lower:]' '[:upper:]')
             echo "## $os_name (.$ext)"
             for file in projects/*.$ext; do
               if [ -f "$file" ]; then
                 slug=$(basename "$file" .$ext)
-                # Recupera o nome original a partir do slug (poderia usar apps.json, mas usamos o slug diretamente)
-                # Precisamos do nome legível; podemos extrair de apps.json ou usar o slug como fallback.
-                # Vamos buscar o nome em apps.json
                 name=$(jq -r ".[] | select(.name | ascii_downcase | gsub(\"[^a-z0-9]\"; \"-\") | gsub(\"-+\"; \"-\") | gsub(\"^-|\"; \"\") == \"$slug\") | .name" apps.json 2>/dev/null || echo "$slug")
-                # Se não encontrou, usa o slug formatado
                 if [ -z "$name" ] || [ "$name" = "null" ]; then
                   name=$(echo "$slug" | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g')
                 fi
@@ -156,39 +147,28 @@ jobs:
             done
           }
 
-          # Gerar conteúdo para substituir
           CONTENT="# Projects to Download\n\n"
           CONTENT+="$(generate_app_list msi "Windows")\n\n"
           CONTENT+="$(generate_app_list deb "Linux")\n\n"
           CONTENT+="$(generate_app_list dmg "macOS")\n\n"
 
-          # Atualizar README.md
-          if [ -f README.md ]; then
-            # Verifica se os marcadores existem
-            if grep -q "<!-- PAKE:APPS:START -->" README.md && grep -q "<!-- PAKE:APPS:END -->" README.md; then
-              # Substitui o conteúdo entre os marcadores
-              sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" README.md
-              echo "✅ README.md updated with app list."
-            else
-              echo "⚠️ README.md does not contain PAKE:APPS markers. Skipping."
-            fi
+          if [ -f README.md ] && grep -q "<!-- PAKE:APPS:START -->" README.md; then
+            sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" README.md
+            echo "✅ README.md updated."
+          else
+            echo "⚠️ README.md missing markers. Skipping."
           fi
 
-          # Atualizar projects.md se existir
-          if [ -f projects.md ]; then
-            if grep -q "<!-- PAKE:APPS:START -->" projects.md && grep -q "<!-- PAKE:APPS:END -->" projects.md; then
-              sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" projects.md
-              echo "✅ projects.md updated with app list."
-            else
-              echo "⚠️ projects.md does not contain PAKE:APPS markers. Skipping."
-            fi
+          if [ -f projects.md ] && grep -q "<!-- PAKE:APPS:START -->" projects.md; then
+            sed -i "/<!-- PAKE:APPS:START -->/,/<!-- PAKE:APPS:END -->/c\<!-- PAKE:APPS:START -->\n$CONTENT\n<!-- PAKE:APPS:END -->" projects.md
+            echo "✅ projects.md updated."
+          else
+            echo "⚠️ projects.md missing markers. Skipping."
           fi
 
-      - name: Check for changes in projects/, README.md, projects.md
+      - name: Check for changes
         id: changes
         run: |
-          set -euo pipefail
-          # Verifica se há alterações (incluindo arquivos novos/não rastreados)
           if git status --porcelain -- projects/ README.md projects.md 2>/dev/null | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else

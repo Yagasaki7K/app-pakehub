@@ -4,9 +4,28 @@ import path from 'node:path';
 const root = process.cwd();
 const projectsDir = path.join(root, 'projects');
 const publicDir = path.join(root, 'public');
-const metadata = JSON.parse(await readFile(path.join(publicDir, 'applications.json'), 'utf8'));
-const bySlug = new Map(metadata.map((app) => [app.slug, app]));
-const byName = new Map(metadata.map((app) => [normalize(app.name), app]));
+
+// Agora lemos o apps.json da raiz (nova fonte de verdade)
+const appsJsonPath = path.join(root, 'apps.json');
+let appEntries = [];
+try {
+    const content = await readFile(appsJsonPath, 'utf8');
+    appEntries = JSON.parse(content);
+} catch {
+    appEntries = [];
+}
+
+// Mapa por nome normalizado e por slug gerado
+const byName = new Map();
+const bySlug = new Map();
+for (const app of appEntries) {
+    const name = app.name || '';
+    const normalized = normalize(name);
+    const slug = slugify(name);
+    byName.set(normalized, { name, slug, url: app.url || null });
+    bySlug.set(slug, { name, slug, url: app.url || null });
+}
+
 const platformByExtension = {
   '.msi': { platform: 'Windows', type: 'MSI', label: 'Windows (.msi)' },
   '.deb': { platform: 'Linux', type: 'DEB', label: 'Linux (.deb)' },
@@ -47,7 +66,7 @@ for (const entry of entries) {
     grouped.set(key, {
       slug: key,
       name: known?.name ?? titleCase(basename),
-      description: known?.description ?? 'Generated Pake desktop application.',
+        description: 'Generated Pake desktop application.',
       sourceUrl: known?.url ?? null,
       icon: null,
       downloads: [],
