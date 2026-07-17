@@ -1,6 +1,16 @@
 name: Build Application
 
 on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: Application name
+        required: true
+        type: string
+      url:
+        description: Application URL
+        required: true
+        type: string
   workflow_call:
     inputs:
       name:
