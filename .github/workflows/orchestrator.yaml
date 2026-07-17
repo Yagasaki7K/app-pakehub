@@ -1,0 +1,108 @@
+name: Build All Apps
+
+on:
+  push:
+    paths:
+      - apps.json
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  orchestrate:
+    name: Orchestrate builds
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate and read apps.json
+        id: matrix
+        shell: bash
+        run: |
+          if [ ! -f apps.json ]; then
+            echo "❌ apps.json not found"
+            exit 1
+          fi
+
+          # Validate JSON schema (name + url)
+          if ! jq -e '.[] | has("name") and has("url")' apps.json > /dev/null; then
+            echo "❌ apps.json missing required fields (name, url)"
+            exit 1
+          fi
+
+          # Build matrix JSON
+          MATRIX=$(jq -c '{ include: . }' apps.json)
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+
+      - name: Show matrix
+        run: echo "${{ steps.matrix.outputs.matrix }}"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: orchestrate
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.orchestrate.outputs.matrix) }}
+      fail-fast: false
+    steps:
+      - name: Call reusable build workflow
+        uses: ./.github/workflows/build-app.yml
+        with:
+          name: ${{ matrix.name }}
+          url: ${{ matrix.url }}
+
+  collect:
+    name: Collect artifacts
+    needs: build
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          find artifacts -type f
+
+      - name: Normalize and copy to projects/
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p projects
+
+          # Normalize slug from filename (already normalized by build-app.yml)
+          for file in artifacts/**/*.msi artifacts/**/*.deb; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              # Filename is already normalized by build-app.yml
+              cp "$file" "projects/$filename"
+            fi
+          done
+
+      - name: Check for changes in projects/
+        id: changes
+        run: |
+          if git diff --quiet -- projects/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit changes
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add projects/
+          git commit -m "Update builds via orchestrator [skip ci]"
+          git push
