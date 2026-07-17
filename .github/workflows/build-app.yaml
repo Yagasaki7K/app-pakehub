@@ -60,7 +60,8 @@ on:
         type: boolean
         default: false
     secrets:
-      GITHUB_TOKEN:
+      token:
+        description: GitHub token with write access to contents
         required: true
 
 permissions:
@@ -233,4 +234,4 @@ jobs:
           assets_file: ${{ steps.prepare.outputs.assets_file }}
           prerelease: ${{ inputs.prerelease }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.token }}
