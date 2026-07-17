@@ -54,14 +54,15 @@ jobs:
           set -euo pipefail
           TIMESTAMP=${{ steps.ts.outputs.timestamp }}
           WORKFLOW="build-app.yaml"
-          TOTAL_RUNS=0
-          COMPLETED_RUNS=0
+          TOTAL_APPS=$(jq '. | length' apps.json)
+          COMPLETED=0
 
-          echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP)..."
+          echo "⏳ Monitoring builds (started after timestamp $TIMESTAMP) – Total apps: $TOTAL_APPS"
 
           for i in {1..120}; do
             # List all runs for the workflow created after the timestamp
-            RUNS=$(gh run list --workflow "$WORKFLOW" --json databaseId,status,createdAt --limit 100 | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
+            RUNS_JSON=$(gh run list --workflow "$WORKFLOW" --json databaseId,status,createdAt --limit 100)
+            RUNS=$(echo "$RUNS_JSON" | jq -r ".[] | select(.createdAt | fromdateiso8601 > $TIMESTAMP)")
 
             if [ -z "$RUNS" ]; then
               echo "⏳ No runs found yet (waiting for triggers)..."
@@ -69,13 +70,8 @@ jobs:
               continue
             fi
 
-            # Count total runs (including in_progress, queued, completed, etc.)
-            TOTAL_RUNS=$(echo "$RUNS" | jq -r 'length')
-            # Count completed runs (success or skipped)
-            COMPLETED_RUNS=$(echo "$RUNS" | jq -r 'select(.status == "completed" or .status == "skipped") | length')
-            # Count failed or cancelled
+            # Check for failed or cancelled runs
             FAILED=$(echo "$RUNS" | jq -r 'select(.status == "failure" or .status == "cancelled")')
-
             if [ -n "$FAILED" ]; then
               echo "❌ A build failed or was cancelled. Cancelling all remaining builds..."
               TO_CANCEL=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued") | .databaseId')
@@ -86,16 +82,26 @@ jobs:
               exit 1
             fi
 
-            # Check if all runs are completed
+            # Count completed runs (success or skipped)
+            COMPLETED=$(echo "$RUNS" | jq -r 'select(.status == "completed" or .status == "skipped") | length')
+            # Count pending runs (in_progress or queued)
             PENDING=$(echo "$RUNS" | jq -r 'select(.status == "in_progress" or .status == "queued")')
+
+            echo "🔄 Still waiting for builds to finish... ($COMPLETED/$TOTAL_APPS completed)"
+
             if [ -z "$PENDING" ]; then
-              echo "✅ All builds finished successfully. ($COMPLETED_RUNS/$TOTAL_RUNS completed)"
+              echo "✅ All builds finished successfully. ($COMPLETED/$TOTAL_APPS completed)"
               break
             fi
 
-            echo "🔄 Still waiting for builds to finish... ($COMPLETED_RUNS/$TOTAL_RUNS completed)"
             sleep 10
           done
+
+          # After loop, check if all builds finished
+          if [ "$COMPLETED" -lt "$TOTAL_APPS" ]; then
+            echo "❌ Timeout: Not all builds completed within the allowed time ($COMPLETED/$TOTAL_APPS)."
+            exit 1
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
