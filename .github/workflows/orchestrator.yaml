@@ -248,7 +248,7 @@ jobs:
 
   status-report:
     name: Build status report
-    needs: [validate, build, collect, release]
+    needs: [validate, build, collect]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -263,16 +263,14 @@ jobs:
           VALIDATE_RESULT="${{ needs.validate.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
           COLLECT_RESULT="${{ needs.collect.result }}"
-          RELEASE_RESULT="${{ needs.release.result }}"
 
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | $VALIDATE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | $BUILD_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Collect | $COLLECT_RESULT |" >> $GITHUB_STEP_SUMMARY
-          echo "| Release | $RELEASE_RESULT |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$BUILD_RESULT" == "success" ] && [ "$RELEASE_RESULT" == "success" ]; then
+          if [ "$BUILD_RESULT" == "success" ] && [ "$COLLECT_RESULT" == "success" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
             exit 0
