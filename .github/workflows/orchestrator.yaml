@@ -27,9 +27,6 @@ concurrency:
   group: orchestrator-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  MAX_PARALLEL: ${{ inputs.max_parallel || vars.MAX_PARALLEL || 4 }}
-
 jobs:
   validate:
     name: Validate apps.json
@@ -136,7 +133,7 @@ jobs:
       matrix:
         app: ${{ fromJson(needs.validate.outputs.apps) }}
       fail-fast: false
-      max-parallel: ${{ env.MAX_PARALLEL }}
+      max-parallel: ${{ inputs.max_parallel || vars.MAX_PARALLEL || 4 }}
     uses: ./.github/workflows/build-app.yaml
     with:
       name: ${{ matrix.app.name }}
