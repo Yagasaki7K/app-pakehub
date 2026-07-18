@@ -71,5 +71,5 @@ runs:
       run: |
         set -euo pipefail
         SLUG="${{ inputs.slug }}"
-        VERSION=$(scripts/next-version.sh "$SLUG")
+        VERSION=$(bash scripts/next-version.sh "$SLUG")
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"

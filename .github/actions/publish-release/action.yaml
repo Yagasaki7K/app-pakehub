@@ -74,7 +74,7 @@ runs:
             ERROR_MSG=$(cat error.log)
             if echo "$ERROR_MSG" | grep -qiE "already exists|rate limit|network|timeout|TLS|502|503|504|connection refused|connection reset|i/o timeout|EOF|transport closed|context deadline|429|ECONNRESET|ETIMEDOUT|socket hang up|temporary failure|connection timed out"; then
               if echo "$ERROR_MSG" | grep -qi "already exists"; then
-                LATEST_VERSION=$(scripts/next-version.sh "$SLUG")
+                LATEST_VERSION=$(bash scripts/next-version.sh "$SLUG")
                 if [ "$LATEST_VERSION" != "$VERSION" ]; then
                   VERSION="$LATEST_VERSION"
                   echo "🔄 Version updated to $VERSION due to conflict"
