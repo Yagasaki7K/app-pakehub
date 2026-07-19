@@ -156,16 +156,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Configure GitHub CLI with PAT (if provided)
-        shell: bash
-        run: |
-          if [ -n "${{ secrets.PAT_TOKEN }}" ]; then
-            echo "🔑 Using Personal Access Token for GitHub CLI"
-            echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
-          else
-            echo "🔑 Using GITHUB_TOKEN (release will appear as github-actions[bot])"
-          fi
-
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -222,6 +212,8 @@ jobs:
 
       - name: Create Release with retry
         id: release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -231,9 +223,11 @@ jobs:
           ATTEMPT=0
           SUCCESS=false
 
+          # Collect files safely using nullglob
+          shopt -s nullglob
           files=()
-          for f in release-assets/*.{msi,deb,dmg}; do
-            [ -f "$f" ] && files+=("$f")
+          for f in release-assets/*.msi release-assets/*.deb release-assets/*.dmg; do
+            files+=("$f")
           done
 
           if [ ${#files[@]} -eq 0 ]; then
