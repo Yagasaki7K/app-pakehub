@@ -115,10 +115,16 @@ jobs:
       url: ${{ fromJson(needs.validate.outputs.smoke).url }}
       slug: smoke
       pake-version: 3.14.0
+      is_smoke: true
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build ${{ matrix.app.name }}
-    needs: validate
+    needs: [validate, smoke-test]
+    if: |
+      needs.validate.result == 'success' &&
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
     permissions:
       contents: read
     strategy:
@@ -132,18 +138,18 @@ jobs:
       url: ${{ matrix.app.url }}
       slug: ${{ matrix.app.slug }}
       pake-version: 3.14.0
+      is_smoke: false
+    secrets:
+      token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
     name: Create Global Release
-    needs: [validate, smoke-test, build]
+    needs: [validate, build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
+    if: always() && needs.build.result == 'success'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -171,6 +177,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
+          # Copy only assets from non-smoke apps (ignore artifacts with slug "smoke")
           find artifacts -type d -name "smoke-*" -prune -o -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
           echo "📦 Assets prepared:"
           ls -la release-assets/

@@ -20,6 +20,11 @@ on:
         required: false
         type: string
         default: 3.14.0
+      is_smoke:
+        description: 'Is this a smoke test?'
+        required: false
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       name:
@@ -39,6 +44,15 @@ on:
         required: false
         type: string
         default: 3.14.0
+      is_smoke:
+        description: 'Is this a smoke test?'
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      token:
+        description: GitHub token with write access
+        required: false
 
 permissions:
   contents: read
