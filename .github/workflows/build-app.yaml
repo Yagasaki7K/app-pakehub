@@ -20,16 +20,6 @@ on:
         required: false
         type: string
         default: 3.14.0
-      prerelease:
-        description: 'Mark release as prerelease?'
-        required: false
-        type: boolean
-        default: true
-      is_smoke:
-        description: 'Is this a smoke test?'
-        required: false
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       name:
@@ -49,20 +39,6 @@ on:
         required: false
         type: string
         default: 3.14.0
-      prerelease:
-        description: 'Mark release as prerelease?'
-        required: false
-        type: boolean
-        default: true
-      is_smoke:
-        description: 'Is this a smoke test?'
-        required: false
-        type: boolean
-        default: false
-    secrets:
-      token:
-        description: GitHub token with write access to contents
-        required: true
 
 permissions:
   contents: read
@@ -110,7 +86,6 @@ jobs:
           trap 'rm -rf "$BUILD_DIR"' EXIT
           cd "$BUILD_DIR"
 
-          # Retry with error-aware logic (capturing stderr to a file)
           retry_build() {
             local n=0
             local max=5
@@ -124,8 +99,6 @@ jobs:
               local exit_code=$?
               n=$((n+1))
               echo "⚠️ Command failed (attempt $n/$max) with exit code $exit_code"
-
-              # Read error message from stderr file
               local error_msg=$(cat "$stderr_file" 2>/dev/null || echo "")
               if echo "$error_msg" | grep -qiE "timeout|connection reset|network|TLS|502|503|504|EOF|transport closed|rate limit"; then
                 echo "🔄 Transient error detected, retrying in ${delay}s..."
@@ -204,34 +177,3 @@ jobs:
           name: ${{ inputs.slug }}-${{ matrix.platform.name }}
           path: ${{ github.workspace }}/artifacts/${{ inputs.slug }}-${{ matrix.platform.name }}/${{ inputs.slug }}.${{ matrix.platform.ext }}
           if-no-files-found: error
-
-  create-release:
-    name: Create Release for ${{ inputs.name }}
-    needs: build-platform
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-    if: ${{ !inputs.is_smoke }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-
-      - name: Prepare release
-        id: prepare
-        uses: ./.github/actions/prepare-release
-        with:
-          slug: ${{ inputs.slug }}
-
-      - name: Publish release
-        uses: ./.github/actions/publish-release
-        with:
-          slug: ${{ inputs.slug }}
-          name: ${{ inputs.name }}
-          version: ${{ steps.prepare.outputs.version }}
-          assets_file: ${{ steps.prepare.outputs.assets_file }}
-          prerelease: ${{ inputs.prerelease }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.token }}

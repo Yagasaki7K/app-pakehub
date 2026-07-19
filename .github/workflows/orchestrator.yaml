@@ -8,10 +8,6 @@ on:
       - .github/actions/**
   workflow_dispatch:
     inputs:
-      prerelease:
-        description: 'Mark release as prerelease?'
-        type: boolean
-        default: true
       max_parallel:
         description: 'Maximum parallel builds'
         required: false
@@ -113,24 +109,18 @@ jobs:
     name: Smoke test
     needs: validate
     if: needs.validate.outputs.smoke != 'null'
-    permissions:
-      contents: write
     uses: ./.github/workflows/build-app.yaml
     with:
       name: __smoke__
       url: ${{ fromJson(needs.validate.outputs.smoke).url }}
       slug: smoke
       pake-version: 3.14.0
-      prerelease: true
-      is_smoke: true
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build ${{ matrix.app.name }}
-    needs: [validate, smoke-test]
+    needs: validate
     permissions:
-      contents: write
+      contents: read
     strategy:
       matrix:
         app: ${{ fromJson(needs.validate.outputs.apps) }}
@@ -142,14 +132,159 @@ jobs:
       url: ${{ matrix.app.url }}
       slug: ${{ matrix.app.slug }}
       pake-version: 3.14.0
-      prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease != false || true }}
-      is_smoke: false
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
+
+  release:
+    name: Create Global Release
+    needs: [validate, smoke-test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Configure GitHub CLI with PAT (if provided)
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.PAT_TOKEN }}" ]; then
+            echo "🔑 Using Personal Access Token for GitHub CLI"
+            echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
+          else
+            echo "🔑 Using GITHUB_TOKEN (release will appear as github-actions[bot])"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: false
+
+      - name: Prepare release assets (exclude smoke)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find artifacts -type d -name "smoke-*" -prune -o -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
+          echo "📦 Assets prepared:"
+          ls -la release-assets/
+          if [ -z "$(ls -A release-assets/)" ]; then
+            echo "❌ No assets found to release"
+            exit 1
+          fi
+
+      - name: Generate release notes (exclude __smoke__)
+        id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > release_notes.md << 'EOF'
+          ## 📦 PakeHub Release
+
+          Aplicativos disponíveis nesta versão:
+
+          EOF
+          jq -r '.apps[].name' apps.json | grep -v '^__smoke__$' | sort | while read -r name; do
+            echo "- $name" >> release_notes.md
+          done
+          cat >> release_notes.md << 'EOF'
+
+          ### Assets
+
+          - Windows: `*.msi`
+          - Linux: `*.deb`
+          - macOS: `*.dmg`
+          EOF
+          echo "release_notes<<EOF" >> "$GITHUB_OUTPUT"
+          cat release_notes.md >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Get next global version (using script)
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(bash scripts/next-version.sh)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create Release with retry
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="pakehub-${VERSION}"
+          MAX_ATTEMPTS=20
+          ATTEMPT=0
+          SUCCESS=false
+
+          files=()
+          for f in release-assets/*.{msi,deb,dmg}; do
+            [ -f "$f" ] && files+=("$f")
+          done
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "❌ No assets found to release"
+            exit 1
+          fi
+
+          echo "📦 Starting release with tag $TAG"
+
+          git fetch --tags origin --force >/dev/null 2>&1
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "🔄 Attempt $ATTEMPT with version $VERSION"
+
+            LATEST_TAG=$(git tag -l "pakehub-[0-9]*" --sort=v:refname | tail -1 || echo "")
+            if [ -n "$LATEST_TAG" ]; then
+              LATEST_VERSION=${LATEST_TAG#pakehub-}
+              if [ "$LATEST_VERSION" != "$VERSION" ]; then
+                VERSION="$LATEST_VERSION"
+                IFS='.' read -r maj min pat <<< "$VERSION"
+                NEW_PATCH=$((pat + 1))
+                VERSION="${maj}.${min}.${NEW_PATCH}"
+                TAG="pakehub-${VERSION}"
+                echo "🔄 Version updated to $VERSION due to conflict"
+              fi
+            fi
+
+            if gh release create "$TAG" \
+              --title "PakeHub v$VERSION" \
+              --notes "${{ steps.notes.outputs.release_notes }}" \
+              "${files[@]}" \
+              --target "${{ github.sha }}" 2>error.log; then
+              SUCCESS=true
+              break
+            else
+              ERROR_MSG=$(cat error.log)
+              if echo "$ERROR_MSG" | grep -qiE "already exists|rate limit|network|timeout|TLS|502|503|504|connection refused|connection reset|i/o timeout|EOF|transport closed|context deadline|429|ECONNRESET|ETIMEDOUT|socket hang up|temporary failure|connection timed out"; then
+                DELAY=$((ATTEMPT * 2 + RANDOM % 3))
+                echo "⚠️ Transient error, retrying in ${DELAY}s..."
+                sleep "$DELAY"
+              else
+                echo "❌ Permanent error: $ERROR_MSG"
+                exit 1
+              fi
+            fi
+          done
+
+          if [ "$SUCCESS" != "true" ]; then
+            echo "❌ Failed to create release after $MAX_ATTEMPTS attempts"
+            exit 1
+          fi
+
+          echo "✅ Release created: $TAG"
 
   status-report:
     name: Build status report
-    needs: [validate, smoke-test, build]
+    needs: [validate, smoke-test, build, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -166,14 +301,16 @@ jobs:
           VALIDATE_RESULT="${{ needs.validate.result }}"
           SMOKE_RESULT="${{ needs.smoke-test.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
+          RELEASE_RESULT="${{ needs.release.result }}"
 
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | $VALIDATE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Smoke Test | $SMOKE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | $BUILD_RESULT |" >> $GITHUB_STEP_SUMMARY
+          echo "| Release | $RELEASE_RESULT |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$SMOKE_RESULT" == "success" ] && [ "$BUILD_RESULT" == "success" ]; then
+          if [ "$SMOKE_RESULT" == "success" ] && [ "$BUILD_RESULT" == "success" ] && [ "$RELEASE_RESULT" == "success" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
             exit 0

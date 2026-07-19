@@ -64,21 +64,7 @@ Pake is used because it is designed for packaging websites as lightweight deskto
 
 ## Available Applications
 
-The repository includes workflow and metadata entries for the following applications:
-
-<!-- PAKE:APPS:START -->
-# Projects to Download
-
-## Windows (.msi)
-
-## Linux (.deb)
-
-## macOS (.dmg)
-
-
-<!-- PAKE:APPS:END -->
-
-The web catalog only displays applications that have generated installer files in `/projects` or you can see better [in projects.md](./projects.md).
+The web catalog only displays applications that have generated installer files in `release` and you can see better [in releases](https://github.com/Yagasaki7K/app-pakehub/releases).
 
 ## Installation
 
