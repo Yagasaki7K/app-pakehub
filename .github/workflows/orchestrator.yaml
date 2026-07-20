@@ -243,19 +243,6 @@ jobs:
             ATTEMPT=$((ATTEMPT + 1))
             echo "🔄 Attempt $ATTEMPT with version $VERSION"
 
-            LATEST_TAG=$(git tag -l "pakehub-[0-9]*" --sort=v:refname | tail -1 || echo "")
-            if [ -n "$LATEST_TAG" ]; then
-              LATEST_VERSION=${LATEST_TAG#pakehub-}
-              if [ "$LATEST_VERSION" != "$VERSION" ]; then
-                VERSION="$LATEST_VERSION"
-                IFS='.' read -r maj min pat <<< "$VERSION"
-                NEW_PATCH=$((pat + 1))
-                VERSION="${maj}.${min}.${NEW_PATCH}"
-                TAG="pakehub-${VERSION}"
-                echo "🔄 Version updated to $VERSION due to conflict"
-              fi
-            fi
-
             if gh release create "$TAG" \
               --title "PakeHub v$VERSION" \
               --notes "${{ steps.notes.outputs.release_notes }}" \
@@ -265,7 +252,20 @@ jobs:
               break
             else
               ERROR_MSG=$(cat error.log)
-              if echo "$ERROR_MSG" | grep -qiE "already exists|rate limit|network|timeout|TLS|502|503|504|connection refused|connection reset|i/o timeout|EOF|transport closed|context deadline|429|ECONNRESET|ETIMEDOUT|socket hang up|temporary failure|connection timed out"; then
+              # Check if it's a conflict (tag/release already exists)
+              if echo "$ERROR_MSG" | grep -qi "already exists"; then
+                # Increment patch version regardless of latest tag
+                IFS='.' read -r maj min pat <<< "$VERSION"
+                NEW_PATCH=$((pat + 1))
+                VERSION="${maj}.${min}.${NEW_PATCH}"
+                TAG="pakehub-${VERSION}"
+                echo "🔄 Tag conflict, version incremented to $VERSION"
+                # Continue loop (no sleep needed, immediately retry with new version)
+                continue
+              fi
+
+              # Check for other transient errors
+              if echo "$ERROR_MSG" | grep -qiE "rate limit|network|timeout|TLS|502|503|504|connection refused|connection reset|i/o timeout|EOF|transport closed|context deadline|429|ECONNRESET|ETIMEDOUT|socket hang up|temporary failure|connection timed out"; then
                 DELAY=$((ATTEMPT * 2 + RANDOM % 3))
                 echo "⚠️ Transient error, retrying in ${DELAY}s..."
                 sleep "$DELAY"
