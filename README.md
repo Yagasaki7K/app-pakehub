@@ -2,7 +2,7 @@
     <img src=/hub.png width=150/>
 </p>
 <h1 align="center">Pake Application Hub</h1>
-<p align="center"><strong>Turn any webpage into a desktop app with Github Actions via Pake, supports Windows and Linux</strong></p>
+<p align="center"><strong>Turn any webpage into a desktop app with Github Actions via Pake, supports Windows, MacOS and Linux</strong></p>
 
 Pake Application Hub is an open-source automation repository that builds and publishes installable desktop wrappers for selected web applications. It is created and maintained by **Yagasaki7K**.
 
