@@ -157,11 +157,11 @@
             "url": "https://web.telegram.org"
         },
         {
-            "name": "Twitter / X",
+            "name": "X",
             "url": "https://x.com"
         },
         {
-            "name": "Web Essentials by Yagasaki7K",
+            "name": "Web Essentials",
             "url": "https://yagasaki7k.github.io/web-essentials"
         },
         {
@@ -171,6 +171,10 @@
         {
             "name": "YouTube",
             "url": "https://youtube.com"
+        },
+        {
+            "name": "z.ai",
+            "url": "https://chat.z.ai/"
         }
     ]
 }
