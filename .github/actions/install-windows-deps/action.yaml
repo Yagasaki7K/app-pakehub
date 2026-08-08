@@ -1,0 +1,88 @@
+name: Install Windows Packaging Dependencies
+description: Installs and caches Windows prerequisites required by Tauri/Pake MSI and NSIS bundlers
+
+runs:
+  using: composite
+  steps:
+    - name: Cache Tauri Windows bundler tools
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\Users\runneradmin\AppData\Local\tauri\WixTools
+          C:\Users\runneradmin\AppData\Local\tauri\NSIS
+        key: ${{ runner.os }}-tauri-windows-tools-wix314-nsis3-v1
+
+    - name: Install WiX Toolset and NSIS
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+
+        $env:COMSPEC = 'C:\Windows\System32\cmd.exe'
+        $env:ComSpec = 'C:\Windows\System32\cmd.exe'
+
+        $tauriCache = Join-Path $env:LOCALAPPDATA 'tauri'
+        $wixDir = Join-Path $tauriCache 'WixTools'
+        $nsisDir = Join-Path $tauriCache 'NSIS'
+        New-Item -ItemType Directory -Force -Path $wixDir, $nsisDir | Out-Null
+
+        function Expand-ToolArchive {
+          param(
+            [Parameter(Mandatory=$true)][string]$Url,
+            [Parameter(Mandatory=$true)][string]$Destination,
+            [Parameter(Mandatory=$true)][string]$Sentinel
+          )
+
+          if (Test-Path (Join-Path $Destination $Sentinel)) {
+            Write-Host "✅ $Sentinel already present in $Destination"
+            return
+          }
+
+          $archive = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileName($Url))
+          Write-Host "⬇️ Downloading $Url"
+          Invoke-WebRequest -Uri $Url -OutFile $archive -MaximumRedirection 5
+          Remove-Item -Recurse -Force $Destination -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $Destination | Out-Null
+          Expand-Archive -Path $archive -DestinationPath $Destination -Force
+          if (-not (Test-Path (Join-Path $Destination $Sentinel))) {
+            throw "Expected $Sentinel was not found after extracting $Url into $Destination"
+          }
+        }
+
+        Expand-ToolArchive `
+          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/wix/wix314-binaries.zip' `
+          -Destination $wixDir `
+          -Sentinel 'candle.exe'
+
+        Expand-ToolArchive `
+          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/nsis/nsis-3.zip' `
+          -Destination $nsisDir `
+          -Sentinel 'makensis.exe'
+
+        "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "COMSPEC=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        "ComSpec=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+        & (Join-Path $wixDir 'candle.exe') -? | Select-Object -First 1
+        & (Join-Path $wixDir 'light.exe') -? | Select-Object -First 1
+        & (Join-Path $nsisDir 'makensis.exe') /VERSION
+
+    - name: Verify Windows SDK and Visual Studio Build Tools
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')
+        $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (-not (Test-Path $vswhere)) { throw 'vswhere.exe not found; Visual Studio Build Tools cannot be verified' }
+        $installation = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+        if (-not $installation) { throw 'Visual Studio C++ build tools were not found' }
+        Write-Host "✅ Visual Studio installation: $installation"
+
+        $sdkRoot = 'C:\Program Files (x86)\Windows Kits\10\bin'
+        $sdk = Get-ChildItem $sdkRoot -Directory -ErrorAction SilentlyContinue |
+          Where-Object { $_.Name -ge '10.0.19041.0' } |
+          Sort-Object Name -Descending |
+          Select-Object -First 1
+        if (-not $sdk) { throw 'Windows 10 SDK 10.0.19041.0 or newer was not found' }
+        Write-Host "✅ Windows SDK: $($sdk.Name)"
