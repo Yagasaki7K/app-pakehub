@@ -10,7 +10,7 @@ runs:
         path: |
           C:\Users\runneradmin\AppData\Local\tauri\WixTools
           C:\Users\runneradmin\AppData\Local\tauri\NSIS
-        key: ${{ runner.os }}-tauri-windows-tools-wix314-nsis3-v1
+        key: ${{ runner.os }}-tauri-windows-tools-wix3141-nsis3-v3
 
     - name: Install WiX Toolset and NSIS
       shell: pwsh
@@ -19,7 +19,6 @@ runs:
         $ProgressPreference = 'SilentlyContinue'
 
         $env:COMSPEC = 'C:\Windows\System32\cmd.exe'
-        $env:ComSpec = 'C:\Windows\System32\cmd.exe'
 
         $tauriCache = Join-Path $env:LOCALAPPDATA 'tauri'
         $wixDir = Join-Path $tauriCache 'WixTools'
@@ -33,9 +32,11 @@ runs:
             [Parameter(Mandatory=$true)][string]$Sentinel
           )
 
-          if (Test-Path (Join-Path $Destination $Sentinel)) {
-            Write-Host "✅ $Sentinel already present in $Destination"
-            return
+          $existingTool = Get-ChildItem -Path $Destination -Recurse -Filter $Sentinel -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($existingTool) {
+            Write-Host "✅ $Sentinel already present at $($existingTool.FullName)"
+            return $existingTool.DirectoryName
           }
 
           $archive = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileName($Url))
@@ -44,29 +45,32 @@ runs:
           Remove-Item -Recurse -Force $Destination -ErrorAction SilentlyContinue
           New-Item -ItemType Directory -Force -Path $Destination | Out-Null
           Expand-Archive -Path $archive -DestinationPath $Destination -Force
-          if (-not (Test-Path (Join-Path $Destination $Sentinel))) {
+
+          $extractedTool = Get-ChildItem -Path $Destination -Recurse -Filter $Sentinel -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if (-not $extractedTool) {
             throw "Expected $Sentinel was not found after extracting $Url into $Destination"
           }
+          return $extractedTool.DirectoryName
         }
 
-        Expand-ToolArchive `
-          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/wix/wix314-binaries.zip' `
+        $wixBinDir = Expand-ToolArchive `
+          -Url 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' `
           -Destination $wixDir `
           -Sentinel 'candle.exe'
 
-        Expand-ToolArchive `
-          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/nsis/nsis-3.zip' `
+        $nsisBinDir = Expand-ToolArchive `
+          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3/nsis-3.zip' `
           -Destination $nsisDir `
           -Sentinel 'makensis.exe'
 
-        "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-        "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "$wixBinDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "$nsisBinDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
         "COMSPEC=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        "ComSpec=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-        & (Join-Path $wixDir 'candle.exe') -? | Select-Object -First 1
-        & (Join-Path $wixDir 'light.exe') -? | Select-Object -First 1
-        & (Join-Path $nsisDir 'makensis.exe') /VERSION
+        & (Join-Path $wixBinDir 'candle.exe') -? | Select-Object -First 1
+        & (Join-Path $wixBinDir 'light.exe') -? | Select-Object -First 1
+        & (Join-Path $nsisBinDir 'makensis.exe') /VERSION
 
     - name: Verify Windows SDK and Visual Studio Build Tools
       shell: pwsh
