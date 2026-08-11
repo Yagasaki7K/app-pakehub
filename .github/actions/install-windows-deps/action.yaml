@@ -10,7 +10,7 @@ runs:
         path: |
           C:\Users\runneradmin\AppData\Local\tauri\WixTools
           C:\Users\runneradmin\AppData\Local\tauri\NSIS
-        key: ${{ runner.os }}-tauri-windows-tools-wix314-nsis3-v1
+        key: ${{ runner.os }}-tauri-windows-tools-wix3141-nsis3-v2
 
     - name: Install WiX Toolset and NSIS
       shell: pwsh
@@ -19,7 +19,6 @@ runs:
         $ProgressPreference = 'SilentlyContinue'
 
         $env:COMSPEC = 'C:\Windows\System32\cmd.exe'
-        $env:ComSpec = 'C:\Windows\System32\cmd.exe'
 
         $tauriCache = Join-Path $env:LOCALAPPDATA 'tauri'
         $wixDir = Join-Path $tauriCache 'WixTools'
@@ -50,19 +49,18 @@ runs:
         }
 
         Expand-ToolArchive `
-          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/wix/wix314-binaries.zip' `
+          -Url 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' `
           -Destination $wixDir `
           -Sentinel 'candle.exe'
 
         Expand-ToolArchive `
-          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/nsis/nsis-3.zip' `
+          -Url 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3/nsis-3.zip' `
           -Destination $nsisDir `
           -Sentinel 'makensis.exe'
 
         "$wixDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
         "$nsisDir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
         "COMSPEC=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        "ComSpec=C:\Windows\System32\cmd.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
         & (Join-Path $wixDir 'candle.exe') -? | Select-Object -First 1
         & (Join-Path $wixDir 'light.exe') -? | Select-Object -First 1
