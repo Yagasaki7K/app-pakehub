@@ -96,7 +96,6 @@ jobs:
         shell: bash
         env:
           COMSPEC: C:\Windows\System32\cmd.exe
-          ComSpec: C:\Windows\System32\cmd.exe
         run: |
           set -euo pipefail
           SLUG="${{ inputs.slug }}"
