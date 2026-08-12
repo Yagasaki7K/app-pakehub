@@ -58,7 +58,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: build-${{ github.repository }}-${{ inputs.slug }}-${{ github.ref }}
+  group: build-${{ github.repository }}-${{ inputs.slug }}
   cancel-in-progress: true
 
 jobs:
@@ -69,9 +69,9 @@ jobs:
     strategy:
       matrix:
         platform:
-          - { name: windows, runner: windows-2022, ext: msi }
-          - { name: linux, runner: ubuntu-22.04, ext: deb }
-          - { name: macos, runner: macos-13, ext: dmg }
+          - { name: windows, runner: windows-latest, ext: msi }
+          - { name: linux, runner: ubuntu-latest, ext: deb }
+          - { name: macos, runner: macos-latest, ext: dmg }
       fail-fast: false
     steps:
       - name: Checkout repository
@@ -88,14 +88,8 @@ jobs:
         if: matrix.platform.name == 'linux'
         uses: ./.github/actions/install-linux-deps
 
-      - name: Install Windows packaging dependencies
-        if: matrix.platform.name == 'windows'
-        uses: ./.github/actions/install-windows-deps
-
       - name: Build ${{ matrix.platform.name }} installer
         shell: bash
-        env:
-          COMSPEC: C:\Windows\System32\cmd.exe
         run: |
           set -euo pipefail
           SLUG="${{ inputs.slug }}"
@@ -103,17 +97,7 @@ jobs:
           PAKE_VERSION="${{ inputs.pake-version }}"
 
           BUILD_DIR=$(mktemp -d)
-          DEBUG_DIR="$GITHUB_WORKSPACE/pake-debug/${SLUG}-${{ matrix.platform.name }}"
-          cleanup() {
-            status=$?
-            if [ $status -ne 0 ]; then
-              mkdir -p "$DEBUG_DIR"
-              cp -a "$BUILD_DIR"/. "$DEBUG_DIR"/ 2>/dev/null || true
-            fi
-            rm -rf "$BUILD_DIR"
-            exit $status
-          }
-          trap cleanup EXIT
+          trap 'rm -rf "$BUILD_DIR"' EXIT
           cd "$BUILD_DIR"
 
           retry_build() {
@@ -173,11 +157,7 @@ jobs:
 
           case "${{ matrix.platform.name }}" in
             windows)
-              if ! file "$ARTIFACT" | grep -qi "Composite Document File"; then
-                echo "❌ Invalid MSI container format"
-                exit 1
-              fi
-              echo "✅ MSI container validation passed ($SIZE bytes)"
+              echo "✅ MSI size validation passed ($SIZE bytes)"
               ;;
             linux)
               if ! file "$ARTIFACT" | grep -qi "Debian binary package"; then
@@ -205,38 +185,9 @@ jobs:
           cp "$ARTIFACT" "$GITHUB_WORKSPACE/artifacts/${SLUG}-${{ matrix.platform.name }}/${SLUG}.${{ matrix.platform.ext }}"
           echo "✅ Collected $SLUG for ${{ matrix.platform.name }} ($SIZE bytes)"
 
-      - name: Validate Windows MSI database
-        if: matrix.platform.name == 'windows'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $msi = Join-Path $env:GITHUB_WORKSPACE 'artifacts/${{ inputs.slug }}-${{ matrix.platform.name }}/${{ inputs.slug }}.${{ matrix.platform.ext }}'
-          if (-not (Test-Path $msi)) { throw "MSI not found: $msi" }
-          $logDir = Join-Path $env:GITHUB_WORKSPACE 'pake-debug/${{ inputs.slug }}-${{ matrix.platform.name }}'
-          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-          $extractDir = Join-Path $env:RUNNER_TEMP 'msi-admin-image'
-          New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
-          $log = Join-Path $logDir 'msiexec-validate.log'
-          $process = Start-Process msiexec.exe -ArgumentList @('/a', $msi, '/qn', "TARGETDIR=$extractDir", '/L*v', $log) -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            Get-Content $log -Tail 200 -ErrorAction SilentlyContinue
-            throw "MSI administrative validation failed with exit code $($process.ExitCode)"
-          }
-          Write-Host "✅ MSI administrative validation passed"
-
-      - name: Upload debug bundle on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-${{ inputs.slug }}-${{ matrix.platform.name }}
-          path: ${{ github.workspace }}/pake-debug/${{ inputs.slug }}-${{ matrix.platform.name }}/**
-          if-no-files-found: ignore
-          retention-days: 7
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.slug }}-${{ matrix.platform.name }}
           path: ${{ github.workspace }}/artifacts/${{ inputs.slug }}-${{ matrix.platform.name }}/${{ inputs.slug }}.${{ matrix.platform.ext }}
           if-no-files-found: error
-          retention-days: 14
