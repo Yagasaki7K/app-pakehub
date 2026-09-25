@@ -19,7 +19,7 @@ on:
         description: Pake CLI version
         required: false
         type: string
-        default: 3.14.0
+        default: 3.17.2
       is_smoke:
         description: 'Is this a smoke test?'
         required: false
