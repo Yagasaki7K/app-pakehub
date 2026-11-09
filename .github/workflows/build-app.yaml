@@ -19,7 +19,7 @@ on:
         description: Pake CLI version
         required: false
         type: string
-        default: 3.17.3
+        default: 3.18.0
       is_smoke:
         description: 'Is this a smoke test?'
         required: false
@@ -43,7 +43,7 @@ on:
         description: Pake CLI version
         required: false
         type: string
-        default: 3.17.3
+        default: 3.18.0
       is_smoke:
         description: 'Is this a smoke test?'
         required: false
@@ -65,7 +65,7 @@ jobs:
   build-platform:
     name: ${{ inputs.name }} (${{ matrix.platform.name }})
     runs-on: ${{ matrix.platform.runner }}
-    timeout-minutes: 40
+    timeout-minutes: 45
     strategy:
       matrix:
         platform:
@@ -131,7 +131,7 @@ jobs:
             return 1
           }
 
-          retry_build npx --yes pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
+          retry_build bunx --bun pake-cli@$PAKE_VERSION "$URL" --name "$SLUG"
 
           ZIP_FILE=$(find . -name "*.zip" | head -1)
           if [ -n "$ZIP_FILE" ]; then
