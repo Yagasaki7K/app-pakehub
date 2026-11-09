@@ -20,11 +20,6 @@ on:
         required: false
         type: string
         default: 3.18.0
-      is_smoke:
-        description: 'Is this a smoke test?'
-        required: false
-        type: boolean
-        default: false
   workflow_call:
     inputs:
       name:
@@ -44,11 +39,6 @@ on:
         required: false
         type: string
         default: 3.18.0
-      is_smoke:
-        description: 'Is this a smoke test?'
-        required: false
-        type: boolean
-        default: false
     secrets:
       token:
         description: GitHub token with write access
@@ -71,7 +61,7 @@ jobs:
         platform:
           - { name: windows, runner: windows-latest, ext: msi }
           - { name: linux, runner: ubuntu-latest, ext: deb }
-          - { name: macos, runner: macos-latest, ext: dmg }
+          - { name: macos, runner: macos-15-intel, ext: dmg }
       fail-fast: false
     steps:
       - name: Checkout repository
@@ -186,7 +176,7 @@ jobs:
           echo "✅ Collected $SLUG for ${{ matrix.platform.name }} ($SIZE bytes)"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ inputs.slug }}-${{ matrix.platform.name }}
           path: ${{ github.workspace }}/artifacts/${{ inputs.slug }}-${{ matrix.platform.name }}/${{ inputs.slug }}.${{ matrix.platform.ext }}

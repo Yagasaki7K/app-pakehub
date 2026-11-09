@@ -34,12 +34,12 @@ for (const file of files) {
   requireIncludes(file, text, `name: Build ${app.name} Pake Installers`, 'workflow name does not match metadata');
   requireIncludes(file, text, 'workflow_dispatch:', 'missing manual trigger');
   requireIncludes(file, text, "uses: actions/checkout@v4", 'missing checkout action');
-  requireIncludes(file, text, "uses: actions/setup-node@v4", 'missing setup-node action');
+  requireIncludes(file, text, 'uses: oven-sh/setup-bun@v2', 'missing setup-bun action');
   requireIncludes(file, text, 'run: bunx --bun pake-cli', 'Pake CLI must be executed with Bun');
   requireIncludes(file, text, `run: pake "${app.url}" --name "${project}"`, 'missing hardcoded Pake URL/name build command');
   requireIncludes(file, text, `run: scripts/ci/validate-projects.sh "projects" "${project}"`, 'missing per-application project validation');
-  requireIncludes(file, text, 'uses: actions/upload-artifact@v4', 'missing upload-artifact v4');
-  requireIncludes(file, text, 'uses: actions/download-artifact@v4', 'missing download-artifact v4');
+  requireIncludes(file, text, 'uses: actions/upload-artifact@v6', 'missing upload-artifact v6');
+  requireIncludes(file, text, 'uses: actions/download-artifact@v7', 'missing download-artifact v7');
   requireIncludes(file, text, 'uses: softprops/action-gh-release@v2', 'missing release action');
 
   if (/APP_NAME|PNPM_HOME|npm\b|pnpm\b|yarn\b|\$APP_NAME/.test(text)) {

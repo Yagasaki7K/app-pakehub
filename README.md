@@ -20,8 +20,6 @@ This repository uses Pake CLI `3.18.0`. It does not recreate or modify the servi
 4. Builds run in parallel with a bounded concurrency level, so the workflow makes steady progress without exhausting the repository's GitHub Actions runner quota. The default is six applications at a time; a manual run can override it with `max_parallel`, or the repository variable `MAX_PARALLEL` can define a default.
 5. Validated artifacts are collected and published in a global GitHub Release. The catalog manifest is generated from the files in `projects/`.
 
-The special `__smoke__` entry in `apps.json` is a small end-to-end build check. It validates the build pipeline but is excluded from public releases.
-
 ## Supported platforms
 
 | Platform | Output |
@@ -66,7 +64,7 @@ Then open <http://localhost:5173>. The frontend reads generated installers from 
 
 ## GitHub Actions maintenance
 
-The Pake version is defined consistently in the reusable workflow, the setup action, and the orchestrator. When upgrading it, update all three defaults and run a manual smoke test before building the complete catalog.
+The Pake version is defined consistently in the reusable workflow, the setup action, and the orchestrator. When upgrading it, update all three defaults and run a manual application build before building the complete catalog.
 
 The build workflow uses native runners, retries transient network failures, caches Bun packages, validates each installer, and uploads one artifact per application and platform. This separation keeps platform builds independent and prevents one slow runner from blocking the other platforms for the same application.
 

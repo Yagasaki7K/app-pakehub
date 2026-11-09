@@ -32,7 +32,6 @@ jobs:
     outputs:
       apps: ${{ steps.validate.outputs.apps }}
       app_count: ${{ steps.validate.outputs.app_count }}
-      smoke: ${{ steps.validate.outputs.smoke }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -85,46 +84,24 @@ jobs:
 
           slugs = []
           app_list = []
-          smoke = None
           for app in apps:
               slug = slugify(app['name'])
               if slug in slugs:
                   print(f"❌ Duplicate slug '{slug}' for app '{app['name']}'")
                   sys.exit(1)
               slugs.append(slug)
-              if app['name'] == '__smoke__':
-                  smoke = {'name': app['name'], 'url': app['url'], 'slug': slug}
-              else:
-                  app_list.append({'name': app['name'], 'url': app['url'], 'slug': slug})
+              app_list.append({'name': app['name'], 'url': app['url'], 'slug': slug})
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"apps={json.dumps(app_list)}\n")
               f.write(f"app_count={len(app_list)}\n")
-              f.write(f"smoke={json.dumps(smoke) if smoke else 'null'}\n")
 
-          print(f"✅ Validated {len(app_list)} apps" + (f" (smoke: {smoke['name']})" if smoke else ""))
+          print(f"✅ Validated {len(app_list)} apps")
           EOF
-
-  smoke-test:
-    name: Smoke test
-    needs: validate
-    if: needs.validate.outputs.smoke != 'null'
-    uses: ./.github/workflows/build-app.yaml
-    with:
-      name: __smoke__
-      url: ${{ fromJson(needs.validate.outputs.smoke).url }}
-      slug: smoke
-      pake-version: 3.18.0
-      is_smoke: true
-    secrets:
-      token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: Build ${{ matrix.app.name }}
-    needs: [validate, smoke-test]
-    if: |
-      needs.validate.result == 'success' &&
-      (needs.smoke-test.result == 'success' || needs.smoke-test.result == 'skipped')
+    needs: validate
     permissions:
       contents: read
     strategy:
@@ -138,7 +115,6 @@ jobs:
       url: ${{ matrix.app.url }}
       slug: ${{ matrix.app.slug }}
       pake-version: 3.18.0
-      is_smoke: false
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -157,18 +133,17 @@ jobs:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
           merge-multiple: false
 
-      - name: Prepare release assets (exclude smoke)
+      - name: Prepare release assets
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          # Copy only assets from non-smoke apps (ignore artifacts with slug "smoke")
-          find artifacts -type d -name "smoke-*" -prune -o -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
+          find artifacts -type f \( -name "*.msi" -o -name "*.deb" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
           echo "📦 Assets prepared:"
           ls -la release-assets/
           if [ -z "$(ls -A release-assets/)" ]; then
@@ -176,7 +151,7 @@ jobs:
             exit 1
           fi
 
-      - name: Generate release notes (exclude __smoke__)
+      - name: Generate release notes
         id: notes
         shell: bash
         run: |
@@ -187,7 +162,7 @@ jobs:
           Aplicativos disponíveis nesta versão:
 
           EOF
-          jq -r '.apps[].name' apps.json | grep -v '^__smoke__$' | sort | while read -r name; do
+          jq -r '.apps[].name' apps.json | sort | while read -r name; do
             echo "- $name" >> release_notes.md
           done
           cat >> release_notes.md << 'EOF'
@@ -285,7 +260,7 @@ jobs:
 
   status-report:
     name: Build status report
-    needs: [validate, smoke-test, build, release]
+    needs: [validate, build, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -300,18 +275,16 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
 
           VALIDATE_RESULT="${{ needs.validate.result }}"
-          SMOKE_RESULT="${{ needs.smoke-test.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
           RELEASE_RESULT="${{ needs.release.result }}"
 
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Validate | $VALIDATE_RESULT |" >> $GITHUB_STEP_SUMMARY
-          echo "| Smoke Test | $SMOKE_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Build | $BUILD_RESULT |" >> $GITHUB_STEP_SUMMARY
           echo "| Release | $RELEASE_RESULT |" >> $GITHUB_STEP_SUMMARY
 
-          if [ "$SMOKE_RESULT" == "success" ] && [ "$BUILD_RESULT" == "success" ] && [ "$RELEASE_RESULT" == "success" ]; then
+          if [ "$BUILD_RESULT" == "success" ] && [ "$RELEASE_RESULT" == "success" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "✅ All builds completed successfully!" >> $GITHUB_STEP_SUMMARY
             exit 0
