@@ -1,6 +1,8 @@
-# Pake Application Hub
+<p align="center">
+<img src="https://raw.githubusercontent.com/tw93/Pake/main/assets/logo.png" width="200" />
+</p>
 
-![Pake Application Hub](hub.png)
+# Pake Application Hub
 
 Pake Application Hub is a community catalog of desktop applications generated from web applications. The project packages useful websites as installable Windows, Linux, and macOS applications, so they can be opened from the desktop without keeping another browser tab pinned.
 
