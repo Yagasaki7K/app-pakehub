@@ -114,7 +114,7 @@ jobs:
       name: ${{ matrix.app.name }}
       url: ${{ matrix.app.url }}
       slug: ${{ matrix.app.slug }}
-      pake-version: 3.18.0
+      pake-version: 3.21.0
     secrets:
       token: ${{ secrets.GITHUB_TOKEN }}
 
